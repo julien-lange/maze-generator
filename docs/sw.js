@@ -14,6 +14,7 @@ const ASSETS = [
   'maze.wasm',
   'icon.svg',
   'icon-180.png',
+  'icon-512.png',
   'manifest.webmanifest',
 ];
 
@@ -38,12 +39,19 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      if (res.ok && res.type === 'basic') {
-        const copy = res.clone();
-        caches.open(VERSION).then((c) => c.put(e.request, copy));
-      }
-      return res;
-    }))
+    caches.match(e.request)
+      .then((hit) => hit || fetch(e.request).then((res) => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      }))
+      .catch(() => {
+        // Offline, and not an exact hit. A navigation carrying a query string
+        // or a hash still wants the page it would have been given.
+        if (e.request.mode === 'navigate') return caches.match('index.html');
+        return Response.error();
+      })
   );
 });

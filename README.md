@@ -36,16 +36,16 @@ It gets its mazes from two places, and cannot tell them apart:
   straight from corner to corner. `-hold` sets the tier length.
 - **`maze.wasm`** — the same Go generator compiled with
   `GOOS=js GOARCH=wasm`, for endless mazes sized to fill whatever screen it is
-  on, the cells shrinking a little with each win. It takes over by itself once
-  the pack is finished, and only then does the ∞ button appear, to switch back
-  and forth — before that it would just be a mystery button in the corner of a
-  small child's game. It is optional: if the wasm fails to load, the pack still
+  on, the cells shrinking a little with each win. The ∞ button switches to it
+  and back, and it takes over by itself once the pack is finished. The button
+  appears as soon as the wasm has loaded, so its presence doubles as a sign the
+  wasm is working. It is optional: if the wasm fails to load, the pack still
   plays and the button never appears.
 
-  To reach it while testing, without playing forty mazes:
+  To jump ahead in the pack while testing:
 
       localStorage.setItem('maze.progress.v1',
-        JSON.stringify({level: 39, endlessUnlocked: true})); location.reload()
+        JSON.stringify({level: 39})); location.reload()
 
 Drawing is cell-by-cell rather than freehand. Walls block the finger, a fast
 flick is filled back in as a legal walk, and sliding back over the trail rewinds

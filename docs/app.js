@@ -84,10 +84,6 @@ let level = 0;          // index into pack
 let endless = false;    // generating fresh mazes instead of reading the pack
 let endlessWins = 0;
 let wasmReady = false;
-// The ∞ button stays out of sight until he has been through the whole pack.
-// Before that it is a mystery button in the corner of a small child's game;
-// after it, it is how he gets back and forth between the pack and endless mode.
-let endlessUnlocked = false;
 let wantEndless = false; // restore endless mode once the wasm has arrived
 
 let path = [];          // the trail, as [row, col] cells
@@ -443,8 +439,6 @@ function nextMaze() {
   level++;
   if (level >= pack.length) {
     level = pack.length - 1;   // stay on the last, so switching back has one to show
-    endlessUnlocked = true;
-    showEndlessBtn();
     if (wasmReady) { setEndless(true); return; }   // pack finished: keep going
     level = 0;                                     // no wasm: round again
   }
@@ -452,17 +446,9 @@ function nextMaze() {
   show(pack[level]);
 }
 
-// showEndlessBtn reveals the toggle only once both halves are true: the pack has
-// been finished, and there is a generator to switch to.
-function showEndlessBtn() {
-  endlessBtn.hidden = !(wasmReady && endlessUnlocked);
-}
-
 function setEndless(on) {
   endless = on && wasmReady;
-  if (endless) endlessUnlocked = true;
   level = Math.min(Math.max(level, 0), pack.length - 1);
-  showEndlessBtn();
   endlessBtn.setAttribute('aria-pressed', String(endless));
   save();
   if (endless) nextMaze();
@@ -473,7 +459,7 @@ function setEndless(on) {
 
 function save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ level, endless, endlessWins, endlessUnlocked }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ level, endless, endlessWins }));
   } catch (_) { /* private browsing: not worth caring about */ }
 }
 
@@ -508,7 +494,7 @@ function loadWasm() {
   const start = (result) => {
     go.run(result.instance);            // returns at the first block; the
     wasmReady = true;                   // export is set before that happens
-    showEndlessBtn();
+    endlessBtn.hidden = false;          // there is now something to switch to
     if (wantEndless) setEndless(true);  // he was in endless mode when he left
   };
   const bytes = () => fetch('maze.wasm')
@@ -533,7 +519,6 @@ fetch(PACK_URL)
     const saved = load();
     level = Math.min(Math.max(saved.level | 0, 0), pack.length - 1);
     endlessWins = saved.endlessWins | 0;
-    endlessUnlocked = Boolean(saved.endlessUnlocked || saved.endless);
     wantEndless = Boolean(saved.endless);
     show(pack[level]);
     loadWasm();
