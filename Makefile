@@ -26,9 +26,16 @@ serve:
 	@echo "http://localhost:$(PORT)/"
 	cd docs && python3 -m http.server $(PORT)
 
-check:
+# The suites read what is in docs/, so rebuild the wasm first — otherwise a
+# changed generator would be checked against yesterday's binary. The pack is
+# deliberately left alone: it is built with flags you may have chosen, and
+# `make check` should not quietly overwrite it with the defaults.
+check: wasm
 	go vet ./...
 	go build -o /dev/null .
+	HOLD=$(HOLD) node test/pack.js
+	node test/player.js
+	node test/wasm.js
 
 clean:
 	rm -f docs/maze.wasm docs/wasm_exec.js docs/pack.json
