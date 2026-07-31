@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#2f3542">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Maze</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header id="bar">
+  <div id="level">Loading…</div>
+  <div id="stars" aria-hidden="true"></div>
+  <button id="endless" hidden title="Endless mazes">∞</button>
+</header>
+
+<main id="stage">
+  <div id="board">
+    <canvas id="walls"></canvas>
+    <canvas id="ink"></canvas>
+  </div>
+  <div id="cheer" hidden>
+    <div id="cheer-card"><span id="cheer-mark">🎉</span><p>You did it!</p></div>
+  </div>
+</main>
+
+<footer id="controls">
+  <button id="reset"><span>↺</span><small>Again</small></button>
+  <button id="hint"><span>💡</span><small>Hint</small></button>
+  <button id="next"><span>→</span><small>Next</small></button>
+</footer>
+
+<script src="wasm_exec.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

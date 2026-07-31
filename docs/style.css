@@ -1,0 +1,142 @@
+/* A single fixed layout: header, the maze filling everything left over, and a
+   row of big buttons. Nothing scrolls — a finger dragging on this page is
+   always drawing, never panning. */
+
+:root {
+  --paper: #fbf7ee;
+  --ink: #2f3542;
+  --trail: #ff6b35;
+  --gold: #f2b705;
+  --bar: #2f3542;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;          /* no pull-to-refresh mid-maze */
+  background: var(--bar);
+  color: var(--paper);
+  overflow: hidden;                   /* confetti must never grow the page */
+  font: 600 16px/1.2 ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+#level { font-size: 17px; }
+#stars { margin-left: auto; color: var(--gold); letter-spacing: 2px; font-size: 15px; }
+
+#endless {
+  flex: none;
+  width: 40px; height: 40px;
+  font-size: 22px;
+  border: 2px solid rgba(251, 247, 238, .35);
+  border-radius: 12px;
+  background: none;
+  color: var(--paper);
+}
+#endless[aria-pressed="true"] { background: var(--gold); color: var(--bar); border-color: var(--gold); }
+
+/* The maze. touch-action:none is what stops the browser treating a drag as a
+   scroll or a pinch and swallowing the pointer events. */
+#stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+#board { position: relative; line-height: 0; }
+#board canvas { display: block; border-radius: 6px; }
+#ink { position: absolute; left: 0; top: 0; }
+
+#cheer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;               /* never blocks the next drag */
+}
+#cheer[hidden] { display: none; }
+
+#cheer-card {
+  background: rgba(47, 53, 66, .93);
+  border-radius: 20px;
+  padding: 18px 28px;
+  text-align: center;
+  animation: pop .45s cubic-bezier(.2, 1.5, .4, 1);
+}
+#cheer-card span { font-size: 44px; }
+#cheer-card p { margin: 6px 0 0; font-size: 20px; }
+
+@keyframes pop {
+  from { transform: scale(.4); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.confetti {
+  position: absolute;
+  top: -8%;
+  font-size: 26px;
+  animation: fall linear forwards;
+  pointer-events: none;
+}
+@keyframes fall {
+  to { transform: translateY(115vh) rotate(540deg); opacity: .2; }
+}
+
+#controls {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px 16px;
+}
+
+#controls button {
+  flex: 1;
+  min-height: 56px;                   /* comfortably bigger than a fingertip */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  border-radius: 16px;
+  background: rgba(251, 247, 238, .12);
+  color: var(--paper);
+  font: inherit;
+}
+#controls button span { font-size: 22px; line-height: 1; }
+#controls button small { font-size: 11px; opacity: .8; font-weight: 500; }
+#controls button:active { background: rgba(251, 247, 238, .28); }
+#controls #hint[aria-pressed="true"] { background: var(--gold); color: var(--bar); }
+#controls #next.ready { background: var(--gold); color: var(--bar); animation: nudge 1.2s ease-in-out infinite; }
+
+@keyframes nudge {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+}

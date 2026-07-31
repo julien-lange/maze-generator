@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Maze">
+  <rect width="512" height="512" rx="112" fill="#2f3542"/>
+  <path d="M96 416V96h320v320H176V176h160v160"
+        fill="none" stroke="#fbf7ee" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M136 464V136h240v240H256"
+        fill="none" stroke="#ff6b35" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
