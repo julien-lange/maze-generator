@@ -1,7 +1,11 @@
-// Command maze generates a maze and prints it laid out for A4 paper.
+//go:build !(js && wasm)
+
+// Command maze generates mazes, either printed for A4 paper or packed as JSON
+// for the browser player in docs/.
 //
-// The maze itself is a graph (maze.go); turning it into characters is a
-// separate pass (print.go) that only ever asks the graph which walls are open.
+// The maze itself is a graph (maze.go); turning it into characters (print.go)
+// or into JSON (pack.go) is a separate pass that only ever asks the graph which
+// walls are open.
 package main
 
 import (
@@ -22,6 +26,8 @@ func main() {
 	cellW := flag.Int("cw", 3, "interior width of a cell, in characters")
 	unicode := flag.Bool("unicode", false, "draw with box-drawing characters instead of +-|")
 	labels := flag.Bool("labels", true, "print row and column indices")
+	packN := flag.Int("pack", 0, "write this many mazes as a JSON pack instead of printing one")
+	tries := flag.Int("tries", 12, "candidates to generate per maze, keeping the twistiest")
 	flag.Parse()
 
 	if *rows < 1 || *cols < 1 {
@@ -39,6 +45,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "maze: seed %d\n", *seed) // so a good one can be replayed
 	}
 	rng := rand.New(rand.NewPCG(*seed, 0x9E3779B97F4A7C15))
+
+	if *packN > 0 {
+		writePack(BuildPack(*packN, *rows, *cols, *tries, rng), *out)
+		return
+	}
 
 	// m := Random(*rows, *cols, *wallProb, rng)
 	// m := DFS(*rows, *cols, rng)
@@ -66,6 +77,21 @@ func main() {
 		StartMark: startMark,
 		EndMark:   endMark,
 	})
+}
+
+// writePack saves a pack where the player expects it, unless -o said otherwise.
+func writePack(p packFile, dest string) {
+	if dest == "" {
+		dest = "docs/pack.json"
+	}
+	b, err := MarshalPack(p)
+	if err != nil {
+		fatal(err)
+	}
+	if err := os.WriteFile(dest, b, 0o644); err != nil {
+		fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "maze: wrote %d mazes to %s (%d bytes)\n", len(p.Mazes), dest, len(b))
 }
 
 func fatal(v any) {
