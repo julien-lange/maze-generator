@@ -13,6 +13,15 @@ characters for A4, `pack.go` turns one into JSON for the browser, and
     go run . -unicode -cw 3         # box-drawing characters
     go run . -seed 12345            # replay a maze you liked
 
+## Tests
+
+    make check      # go vet, build, and four suites: pack, player, wasm, pdf
+
+They run against the files in `docs/` and take under a second. `make check`
+rebuilds the wasm first, so a changed generator is never checked against
+yesterday's binary, but it leaves `pack.json` alone — that one is built with
+flags you may have chosen.
+
 ## The browser player
 
 `docs/` is a self-contained static site: no build step, no framework, no
@@ -87,6 +96,42 @@ a small finger. Fewer columns makes them bigger:
 
 `HOLD` and `PACK` together decide how gently the grid grows: 40 mazes at
 `HOLD=5` is eight sizes, at `HOLD=10` just four.
+
+## Printing the pack
+
+    make pdf          # mazes.pdf: 40 A4 sheets, one maze each
+
+Same generator, same tiers, same ramp, and the same `SEED` as `make pack` — so
+these are the *same forty mazes* he plays on the phone, in the same order. Each
+sheet carries the heading, the difficulty in stars, and the identical line of
+measurements that appears under the board on screen.
+
+The pages are drawn from `pack.json`'s own bitsets rather than from a second
+generation run, so a printed maze cannot drift from the played one.
+
+`pdf.go` writes the file by hand — a maze is a few hundred straight lines and
+two short strings, so this costs less than a dependency and keeps the module
+free of them. Cells are capped at about 28mm, which is why the small early
+mazes do not stretch to fill a whole sheet.
+
+The animals come too. PDF has no way to draw a colour emoji as text — the
+glyphs live in bitmap or layered-colour tables its font model knows nothing
+about — so they travel as images instead: the colour in one stream and the
+transparency in a soft mask beside it, each glyph embedded once however many
+sheets use it. That is most of the 820 KB.
+
+`assets/emoji` holds those images, pre-rendered and committed. Rebuild them only
+if the `animals` list in `print.go` changes:
+
+    make emoji-assets
+
+The browser does the rendering, being the thing here that knows how to draw a
+colour emoji: Go writes an HTML sheet of every glyph straight from the `animals`
+slice, headless Chrome screenshots it on a transparent background, and the tiles
+are cut out and named after their code points — so reordering the list cannot
+invalidate them. Needs Chrome and ImageMagick, which is why the results are
+committed rather than built on demand. If the assets are missing, the PDF still
+prints: the start falls back to a filled dot and the end to a target.
 
 ## Publishing to GitHub Pages
 

@@ -29,7 +29,18 @@ func main() {
 	packN := flag.Int("pack", 0, "write this many mazes as a JSON pack instead of printing one")
 	tries := flag.Int("tries", 12, "candidates to generate per maze, keeping the twistiest")
 	hold := flag.Int("hold", 5, "mazes to keep at one grid size before stepping it up")
+	pdfOut := flag.String("pdf", "", "also write the pack to this file as an A4 PDF, one maze per sheet")
+	sheet := flag.String("emoji-sheet", "", "build tool: write the HTML glyph sheet assets/emoji is cut from")
 	flag.Parse()
+
+	if *sheet != "" {
+		writeEmojiSheet(*sheet)
+		return
+	}
+
+	if *pdfOut != "" && *packN == 0 {
+		*packN = 40 // -pdf on its own still means "build me a pack"
+	}
 
 	if *rows < 1 || *cols < 1 {
 		fatal("n and m must both be at least 1")
@@ -48,7 +59,15 @@ func main() {
 	rng := rand.New(rand.NewPCG(*seed, 0x9E3779B97F4A7C15))
 
 	if *packN > 0 {
-		writePack(BuildPack(*packN, *rows, *cols, *tries, *hold, rng), *out)
+		p := BuildPack(*packN, *rows, *cols, *tries, *hold, rng)
+		if *pdfOut != "" {
+			writePDF(p, *pdfOut)
+		}
+		// The JSON is still the default output, so -pack alone behaves as before;
+		// asking for a PDF suppresses it unless -o says otherwise.
+		if *out != "" || *pdfOut == "" {
+			writePack(p, *out)
+		}
 		return
 	}
 
@@ -93,6 +112,18 @@ func writePack(p packFile, dest string) {
 		fatal(err)
 	}
 	fmt.Fprintf(os.Stderr, "maze: wrote %d mazes to %s (%d bytes)\n", len(p.Mazes), dest, len(b))
+}
+
+// writePDF saves the same pack as a booklet to print.
+func writePDF(p packFile, dest string) {
+	b, err := PDF(p)
+	if err != nil {
+		fatal(err)
+	}
+	if err := os.WriteFile(dest, b, 0o644); err != nil {
+		fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "maze: wrote %d A4 pages to %s (%d bytes)\n", len(p.Mazes), dest, len(b))
 }
 
 func fatal(v any) {
