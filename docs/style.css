@@ -105,6 +105,18 @@ body {
   to { transform: translateY(115vh) rotate(540deg); opacity: .2; }
 }
 
+/* For you, not for him: what this maze actually is, so you can see which sizes
+   and which generator he gets through. */
+#info {
+  flex: none;
+  margin: 0;
+  padding: 8px 10px 0;
+  text-align: center;
+  font: 500 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .02em;
+  color: rgba(251, 247, 238, .45);
+}
+
 #controls {
   flex: none;
   display: flex;
@@ -129,7 +141,6 @@ body {
 #controls button span { font-size: 22px; line-height: 1; }
 #controls button small { font-size: 11px; opacity: .8; font-weight: 500; }
 #controls button:active { background: rgba(251, 247, 238, .28); }
-#controls #hint[aria-pressed="true"] { background: var(--gold); color: var(--bar); }
 #controls #next.ready { background: var(--gold); color: var(--bar); animation: nudge 1.2s ease-in-out infinite; }
 
 @keyframes nudge {

@@ -45,9 +45,9 @@ func generate(_ js.Value, args []js.Value) any {
 	}
 
 	rng := rand.New(rand.NewPCG(seed, 0x9E3779B97F4A7C15))
-	m := Pick(rows, cols, tries, rng)
+	m, algo := Pick(rows, cols, tries, rng.IntN(len(generators)), rng)
 	startMark, endMark := AnimalPair(rng)
-	w := Encode(m, Cell{0, 0}, Cell{rows - 1, cols - 1}, startMark, endMark)
+	w := Encode(m, Cell{0, 0}, Cell{rows - 1, cols - 1}, startMark, endMark, algo)
 
 	b, err := json.Marshal(w)
 	if err != nil {

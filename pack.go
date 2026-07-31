@@ -23,7 +23,14 @@ type wire struct {
 	StartMark string   `json:"startMark"`
 	EndMark   string   `json:"endMark"`
 	Solution  [][2]int `json:"solution"`
-	Stars     int      `json:"stars"` // 1-5, assigned relative to the rest of the pack
+
+	// What the maze turned out to be, so the page can show it and you can see
+	// which kinds he is getting through.
+	Algo      string `json:"algo"`
+	Steps     int    `json:"steps"`
+	Junctions int    `json:"junctions"`
+	Score     int    `json:"score"`
+	Stars     int    `json:"stars"` // 1-5, assigned relative to the rest of the pack
 }
 
 // packFile is what lands in docs/pack.json.
@@ -52,15 +59,23 @@ func packBits(walls [][]bool) string {
 	return base64.StdEncoding.EncodeToString(buf)
 }
 
-// Encode packages a maze for the player. The solution travels with it so the
-// player can offer a hint and can tell that a path has arrived without having
-// to solve anything itself.
-func Encode(m *Maze, start, end Cell, startMark, endMark string) wire {
+// Score measures how hard a maze is to get through. Every step costs one and
+// every junction costs three, because for a small child it is the wrong turns
+// that defeat him, not the walking. It is what the pack is sorted and starred
+// by, and it is comparable across the two generators, which a raw step count is
+// not: DFS runs long and straight, Prim's runs short and forked.
+func Score(steps, junctions int) int { return steps + 3*junctions }
+
+// Encode packages a maze for the player, measured. The solution travels with it
+// so the player can tell that a path has arrived without solving anything
+// itself, and so the numbers below can be checked against it.
+func Encode(m *Maze, start, end Cell, startMark, endMark, algo string) wire {
 	sol := m.Solve(start, end)
 	steps := make([][2]int, len(sol))
 	for i, c := range sol {
 		steps[i] = [2]int{c.Row, c.Col}
 	}
+	junctions := m.Junctions(sol)
 	return wire{
 		Rows:      m.Rows,
 		Cols:      m.Cols,
@@ -71,33 +86,51 @@ func Encode(m *Maze, start, end Cell, startMark, endMark string) wire {
 		StartMark: startMark,
 		EndMark:   endMark,
 		Solution:  steps,
+		Algo:      algo,
+		Steps:     len(sol),
+		Junctions: junctions,
+		Score:     Score(len(sol), junctions),
 	}
 }
 
-// Pick generates tries candidates and keeps the one whose solution is longest.
-//
-// Prim's tends to run the answer fairly directly between the corners, which
-// makes for a dull maze; taking the best of a handful costs nothing at this
-// size and reliably buys a path that wanders. Best-of-N rather than
-// reject-and-retry so that the loop cannot fail to terminate on a shape where
-// the threshold is unreachable.
-func Pick(rows, cols, tries int, rng *rand.Rand) *Maze {
+// generators are the carving algorithms a pack draws on. They fail differently,
+// which is the point of using both: Prim's grows from a frontier and so forks
+// constantly, giving short direct solutions past a great many wrong turnings;
+// DFS carves one long corridor and backtracks, giving a winding solution with
+// far fewer decisions in it. A pack of only one kind gets samey fast.
+var generators = []struct {
+	Name  string
+	Carve func(rows, cols int, rng *rand.Rand) *Maze
+}{
+	{"prim", Prims},
+	{"dfs", DFS},
+}
+
+// Pick generates tries candidates with one generator and keeps the one that
+// scores highest, which weeds out the occasional maze whose answer runs almost
+// straight from corner to corner. Best-of-N rather than reject-and-retry, so
+// the loop cannot fail to terminate on a shape where a threshold is
+// unreachable. gen selects the generator, by index, wrapping.
+func Pick(rows, cols, tries, gen int, rng *rand.Rand) (*Maze, string) {
+	g := generators[((gen%len(generators))+len(generators))%len(generators)]
 	start, end := Cell{0, 0}, Cell{rows - 1, cols - 1}
+
 	var best *Maze
-	bestLen := -1
+	bestScore := -1
 	for range max(tries, 1) {
-		m := Prims(rows, cols, rng)
-		if n := len(m.Solve(start, end)); n > bestLen {
-			best, bestLen = m, n
+		m := g.Carve(rows, cols, rng)
+		sol := m.Solve(start, end)
+		if s := Score(len(sol), m.Junctions(sol)); s > bestScore {
+			best, bestScore = m, s
 		}
 	}
-	return best
+	return best, g.Name
 }
 
-// BuildPack generates count mazes that grow from small to full size, sorts them
-// by how long their solutions are, and awards stars by where each one lands in
-// that order — so the stars always climb, whatever the generator happened to
-// produce.
+// BuildPack generates count mazes that grow from small to full size, alternating
+// generators so both kinds turn up at every size, then sorts them by measured
+// score and awards stars by where each one lands in that order — so the stars
+// always climb, whatever the generators happened to produce.
 func BuildPack(count, maxRows, maxCols, tries int, rng *rand.Rand) packFile {
 	minRows, minCols := max(maxRows/3, 4), max(maxCols/3, 4)
 
@@ -110,14 +143,12 @@ func BuildPack(count, maxRows, maxCols, tries int, rng *rand.Rand) packFile {
 		rows := minRows + int(t*float64(maxRows-minRows)+0.5)
 		cols := minCols + int(t*float64(maxCols-minCols)+0.5)
 
-		m := Pick(rows, cols, tries, rng)
+		m, algo := Pick(rows, cols, tries, k, rng) // k alternates the generator
 		startMark, endMark := AnimalPair(rng)
-		mazes = append(mazes, Encode(m, Cell{0, 0}, Cell{rows - 1, cols - 1}, startMark, endMark))
+		mazes = append(mazes, Encode(m, Cell{0, 0}, Cell{rows - 1, cols - 1}, startMark, endMark, algo))
 	}
 
-	sort.SliceStable(mazes, func(i, j int) bool {
-		return len(mazes[i].Solution) < len(mazes[j].Solution)
-	})
+	sort.SliceStable(mazes, func(i, j int) bool { return mazes[i].Score < mazes[j].Score })
 	for i := range mazes {
 		mazes[i].Stars = 1 + i*5/len(mazes) // quintile of the sorted pack
 	}

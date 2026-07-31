@@ -23,11 +23,11 @@ network calls beyond its own files.
 
 It gets its mazes from two places, and cannot tell them apart:
 
-- **`pack.json`** — 40 mazes generated ahead of time, growing from 8x5 to
-  20x14, sorted so they get harder, and starred one to five. Generating them in
-  Go means they can be quality-controlled: `Pick` keeps the twistiest of twelve
-  candidates, and every maze ships with its solution, so the player can offer a
-  hint and knows when he has arrived.
+- **`pack.json`** — 40 mazes generated ahead of time, growing from 6x4 to
+  19x13, sorted so they get harder, and starred one to five. Generating them in
+  Go means they can be quality-controlled: `Pick` keeps the highest-scoring of
+  twelve candidates, so no maze has its answer running straight from corner to
+  corner.
 - **`maze.wasm`** — the same Go generator compiled with
   `GOOS=js GOARCH=wasm`, for endless mazes sized to fill whatever screen it is
   on. The ∞ button in the corner turns it on, and it takes over automatically
@@ -37,6 +37,30 @@ It gets its mazes from two places, and cannot tell them apart:
 Drawing is cell-by-cell rather than freehand. Walls block the finger, a fast
 flick is filled back in as a legal walk, and sliding back over the trail rewinds
 it — so retreating out of a dead end is the same gesture as going in.
+
+### Which maze is this?
+
+Packs alternate between the two generators, because they fail differently and a
+pack of only one kind gets samey. On the same 19x13 grid:
+
+| | solution | junctions | feels like |
+|---|---|---|---|
+| `prim` | short (41 steps) | many (28) | constant forks, stubby dead ends |
+| `dfs` | long (139 steps) | few (14) | one snaking corridor, little to decide |
+
+Step count alone therefore says nothing useful across the two. The line under
+the board gives the size, which generator carved it, and the measurement:
+
+    #35/40 · 19×13 · prim · 41 steps · 28 junctions · score 125
+
+A **junction** is a cell on the solution with three or more ways out — a place
+he has to choose, and can choose wrongly. **Score** is `steps + 3 × junctions`
+(`Score` in `pack.go`): wrong turns are weighted heavily because those are what
+actually defeat a small child, not the walking. The pack is sorted by score and
+starred by quintile, so the stars always climb even though the two generators
+produce such different-looking mazes.
+
+Watch which scores he starts failing at, and set the pack size accordingly.
 
 ### Changing the shape
 

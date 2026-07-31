@@ -32,6 +32,12 @@ class Maze {
     this.endMark = d.endMark;
     this.solution = d.solution || [];
     this.stars = d.stars || 0;
+    // Measured in Go when the maze was carved; shown in the line under the
+    // board so its difficulty can be tracked rather than guessed at.
+    this.algo = d.algo || '?';
+    this.steps = d.steps || 0;
+    this.junctions = d.junctions || 0;
+    this.score = d.score || 0;
   }
 
   inside(r, c) { return r >= 0 && r < this.rows && c >= 0 && c < this.cols; }
@@ -69,7 +75,7 @@ const inkCtx = inkCanvas.getContext('2d');
 const stage = document.getElementById('stage');
 const cheer = document.getElementById('cheer');
 const nextBtn = document.getElementById('next');
-const hintBtn = document.getElementById('hint');
+const infoEl = document.getElementById('info');
 const endlessBtn = document.getElementById('endless');
 
 let maze = null;
@@ -85,7 +91,6 @@ let drawing = false;
 let won = false;
 let celebrated = false;   // one cheer per arrival, however much he wiggles
 let cheerTimer = 0;
-let showHint = false;
 
 let cell = 0, wallW = 0, ox = 0, oy = 0;
 let pulseUntil = 0, pulsing = false;
@@ -175,12 +180,6 @@ function drawInk() {
   const w = maze.cols * cell + wallW;
   const h = maze.rows * cell + wallW;
   inkCtx.clearRect(0, 0, w, h);
-
-  if (showHint) {
-    inkCtx.setLineDash([cell * 0.22, cell * 0.3]);
-    stroke(maze.solution, 'rgba(46, 164, 79, .45)', cell * 0.16);
-    inkCtx.setLineDash([]);
-  }
 
   if (path.length) {
     stroke(path, won ? '#f2b705' : '#ff6b35', cell * 0.34);
@@ -395,8 +394,6 @@ function confetti() {
 
 function show(data) {
   maze = new Maze(data);
-  showHint = false;
-  hintBtn.setAttribute('aria-pressed', 'false');
   resetPath();
   fit();
   drawWalls();
@@ -406,6 +403,16 @@ function show(data) {
     endless ? 'Maze ' + (endlessWins + 1) : 'Maze ' + (level + 1) + ' of ' + pack.length;
   document.getElementById('stars').textContent =
     endless ? '∞' : '★'.repeat(maze.stars) + '☆'.repeat(5 - maze.stars);
+  infoEl.textContent = [
+    endless ? '∞ #' + (endlessWins + 1) : '#' + (level + 1) + '/' + pack.length,
+    maze.rows + '×' + maze.cols,
+    maze.algo,
+    maze.steps + ' steps',
+    maze.junctions + ' junctions',
+    'score ' + maze.score,
+    // Hard spaces inside each item, ordinary ones between: on a narrow phone
+    // the line then breaks between facts rather than through the middle of one.
+  ].map((s) => s.replace(/ /g, ' ')).join(' · ');
 }
 
 // endlessShape asks for a maze that will exactly fill this screen at a
@@ -459,12 +466,6 @@ function load() {
 
 document.getElementById('reset').addEventListener('click', resetPath);
 nextBtn.addEventListener('click', nextMaze);
-
-hintBtn.addEventListener('click', () => {
-  showHint = !showHint;
-  hintBtn.setAttribute('aria-pressed', String(showHint));
-  drawInk();
-});
 
 endlessBtn.addEventListener('click', () => setEndless(!endless));
 

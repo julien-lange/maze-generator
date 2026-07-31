@@ -48,6 +48,20 @@ func (m *Maze) Solve(start, end Cell) []Cell {
 	return path
 }
 
+// Junctions counts the cells along path that offer a wrong turn: those with
+// three or more ways out. These are the decisions a solver actually has to
+// make, and they say more about how hard a maze feels than its length does — a
+// long corridor with no choices in it is just walking.
+func (m *Maze) Junctions(path []Cell) int {
+	n := 0
+	for _, c := range path {
+		if len(m.Neighbours(c)) >= 3 {
+			n++
+		}
+	}
+	return n
+}
+
 // DeadEnds counts the cells with only one way out. They are the wrong turns a
 // solver can take, so they say something about how much a maze fights back that
 // the length of the solution alone does not.
