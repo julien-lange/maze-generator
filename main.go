@@ -28,6 +28,7 @@ func main() {
 	labels := flag.Bool("labels", true, "print row and column indices")
 	packN := flag.Int("pack", 0, "write this many mazes as a JSON pack instead of printing one")
 	tries := flag.Int("tries", 12, "candidates to generate per maze, keeping the twistiest")
+	hold := flag.Int("hold", 5, "mazes to keep at one grid size before stepping it up")
 	flag.Parse()
 
 	if *rows < 1 || *cols < 1 {
@@ -47,7 +48,7 @@ func main() {
 	rng := rand.New(rand.NewPCG(*seed, 0x9E3779B97F4A7C15))
 
 	if *packN > 0 {
-		writePack(BuildPack(*packN, *rows, *cols, *tries, rng), *out)
+		writePack(BuildPack(*packN, *rows, *cols, *tries, *hold, rng), *out)
 		return
 	}
 

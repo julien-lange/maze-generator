@@ -23,16 +23,29 @@ network calls beyond its own files.
 
 It gets its mazes from two places, and cannot tell them apart:
 
-- **`pack.json`** — 40 mazes generated ahead of time, growing from 6x4 to
-  19x13, sorted so they get harder, and starred one to five. Generating them in
-  Go means they can be quality-controlled: `Pick` keeps the highest-scoring of
-  twelve candidates, so no maze has its answer running straight from corner to
-  corner.
+- **`pack.json`** — 40 mazes generated ahead of time, in eight tiers of five.
+  The grid holds at one size for a whole tier before stepping up, so he gets
+  five goes at a size before it grows:
+
+      6x4 -> 8x5 -> 10x7 -> 12x8 -> 14x10 -> 16x11 -> 18x13 -> 20x14
+       1*    2*     2*      3*      3*       4*       4*       5*
+
+  Within a tier the mazes get harder while the grid stays put; stars mark the
+  tier. Generating them in Go means they can be quality-controlled: `Pick` keeps
+  the highest-scoring of twelve candidates, so no maze has its answer running
+  straight from corner to corner. `-hold` sets the tier length.
 - **`maze.wasm`** — the same Go generator compiled with
   `GOOS=js GOARCH=wasm`, for endless mazes sized to fill whatever screen it is
-  on. The ∞ button in the corner turns it on, and it takes over automatically
-  once the pack is finished. It is optional: if the wasm fails to load, the
-  pack still plays.
+  on, the cells shrinking a little with each win. It takes over by itself once
+  the pack is finished, and only then does the ∞ button appear, to switch back
+  and forth — before that it would just be a mystery button in the corner of a
+  small child's game. It is optional: if the wasm fails to load, the pack still
+  plays and the button never appears.
+
+  To reach it while testing, without playing forty mazes:
+
+      localStorage.setItem('maze.progress.v1',
+        JSON.stringify({level: 39, endlessUnlocked: true})); location.reload()
 
 Drawing is cell-by-cell rather than freehand. Walls block the finger, a fast
 flick is filled back in as a legal walk, and sliding back over the trail rewinds
@@ -41,17 +54,18 @@ it — so retreating out of a dead end is the same gesture as going in.
 ### Which maze is this?
 
 Packs alternate between the two generators, because they fail differently and a
-pack of only one kind gets samey. On the same 19x13 grid:
+pack of only one kind gets samey. Both appear in every tier. On the same 20x14
+grid:
 
 | | solution | junctions | feels like |
 |---|---|---|---|
-| `prim` | short (41 steps) | many (28) | constant forks, stubby dead ends |
-| `dfs` | long (139 steps) | few (14) | one snaking corridor, little to decide |
+| `prim` | short (37 steps) | many (24) | constant forks, stubby dead ends |
+| `dfs` | long (159 steps) | few (20) | one snaking corridor, little to decide |
 
 Step count alone therefore says nothing useful across the two. The line under
 the board gives the size, which generator carved it, and the measurement:
 
-    #35/40 · 19×13 · prim · 41 steps · 28 junctions · score 125
+    #36/40 · 20×14 · prim · 37 steps · 24 junctions · score 109
 
 A **junction** is a cell on the solution with three or more ways out — a place
 he has to choose, and can choose wrongly. **Score** is `steps + 3 × junctions`
@@ -68,7 +82,11 @@ Cells come out around 26px on a phone at the default 20x14, which is tight for
 a small finger. Fewer columns makes them bigger:
 
     make pack ROWS=14 COLS=10
+    make pack HOLD=8              # eight goes at each size instead of five
     make pack PACK=60 SEED=7      # more mazes, different set
+
+`HOLD` and `PACK` together decide how gently the grid grows: 40 mazes at
+`HOLD=5` is eight sizes, at `HOLD=10` just four.
 
 ## Publishing to GitHub Pages
 

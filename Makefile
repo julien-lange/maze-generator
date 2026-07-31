@@ -4,6 +4,7 @@
 PACK ?= 40
 ROWS ?= 20
 COLS ?= 14
+HOLD ?= 5
 SEED ?= 20260731
 PORT ?= 8731
 
@@ -11,10 +12,10 @@ PORT ?= 8731
 
 all: pack wasm
 
-# The curated ladder: 40 mazes growing from small to full size, each the
-# twistiest of a dozen candidates.
+# The curated ladder: 40 mazes growing from small to full size in steps of
+# HOLD mazes, each the twistiest of a dozen candidates.
 pack:
-	go run . -pack $(PACK) -n $(ROWS) -m $(COLS) -seed $(SEED) -o docs/pack.json
+	go run . -pack $(PACK) -n $(ROWS) -m $(COLS) -hold $(HOLD) -seed $(SEED) -o docs/pack.json
 
 # The same generator again, this time for endless mazes in the page itself.
 wasm:
