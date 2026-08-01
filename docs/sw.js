@@ -2,7 +2,7 @@
 // car, on a train, wherever. Bump VERSION whenever you republish a new pack or
 // a new wasm build, or phones will happily keep serving yesterday's.
 
-const VERSION = 'maze-v2';
+const VERSION = 'maze-v3';
 
 const ASSETS = [
   './',
@@ -23,7 +23,13 @@ self.addEventListener('install', (e) => {
     caches.open(VERSION)
       // One asset at a time: addAll rejects the whole batch if a single file is
       // missing, and a missing icon should not cost us the offline maze.
-      .then((c) => Promise.allSettled(ASSETS.map((a) => c.add(a))))
+      //
+      // cache: 'reload' goes past the browser's own cache to the network. Pages
+      // serves these with ten minutes of freshness, and without this a new
+      // worker can dutifully install a copy of the version it is replacing.
+      .then((c) => Promise.allSettled(
+        ASSETS.map((a) => c.add(new Request(a, { cache: 'reload' })))
+      ))
       .then(() => self.skipWaiting())
   );
 });

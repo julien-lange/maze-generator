@@ -86,6 +86,7 @@ let endless = false;    // generating fresh mazes instead of reading the pack
 let endlessWins = 0;
 let wasmReady = false;
 let wantEndless = false; // restore endless mode once the wasm has arrived
+let stale = false;       // a newer app is waiting; go back for it at a safe moment
 
 let path = [];          // the trail, as [row, col] cells
 let seen = new Map();   // "row,col" -> position in path, for O(1) backtracking
@@ -492,6 +493,10 @@ function confetti() {
 /* ------------------------------------------------------------- the mazes */
 
 function show(data) {
+  // A newer app arrived while he was playing. Between two mazes is the moment
+  // to take it: the progress is already saved and there is no trail to lose.
+  if (stale) { location.reload(); return; }
+
   maze = new Maze(data);
   resetPath();
   forget();               // a new maze: there is no earlier trail to go back to
@@ -655,6 +660,17 @@ fetch(PACK_URL)
     document.getElementById('level').textContent = 'Could not load pack.json';
   });
 
+// The worker serves the app from a cache, so a page can go on running the
+// version it was launched with long after a new one is sitting there installed.
+// A worker taking over is the signal that has happened, and the only way to see
+// the new files is to go back for the page: at once if he has not started, and
+// otherwise at the next maze, where there is nothing to lose by it.
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const updating = Boolean(navigator.serviceWorker.controller);  // not a first visit
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!updating) return;      // the first worker ever, claiming its first page
+    stale = true;
+    if (!path.length) location.reload();
+  });
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
