@@ -12,6 +12,7 @@ const { DOCS, readPack, results } = require('./harness');
 const pack = readPack();
 const r = results('PLAYER CHECKS');
 const calls = {};
+let reloads = 0;
 
 function ctx2d() {
   const rec = (name) => (...a) => { calls[name] = (calls[name] || 0) + 1; return a; };
@@ -74,7 +75,7 @@ const define = (name, value) =>
 
 define('window', globalThis);
 define('document', { getElementById: get, createElement: () => el('span'), addEventListener: () => {} });
-define('location', { protocol: 'file:' });          // keeps the service worker out of the way
+define('location', { protocol: 'file:', reload: () => { reloads++; } });   // no worker registered
 define('navigator', {});                            // no serviceWorker in it, so none is registered
 define('matchMedia', () => ({ matches: true }));    // reduced motion: suppress confetti
 define('ResizeObserver', class { observe() {} });
@@ -84,6 +85,7 @@ define('localStorage', {
   _v: {},
   getItem(k) { return this._v[k] || null; },
   setItem(k, v) { this._v[k] = v; },
+  removeItem(k) { delete this._v[k]; },
 });
 define('fetch', () => Promise.resolve({ ok: true, json: () => Promise.resolve(pack) }));
 
@@ -246,8 +248,43 @@ setTimeout(() => {
   const back = get('info').textContent;
   if (!back.startsWith(`#${n}/`)) r.fail(`came back to "${back}", want the last maze`);
 
-  r.done(
-    `info line: ${info}`,
-    `maze 1: ${m.rows}x${m.cols} at ${cell}px cells -> canvas ${ink.style.width} x ${ink.style.height}`,
-  );
+  // 13. The grown-ups' reset asks first, and a no leaves everything alone.
+  const asked = [];
+  define('confirm', (msg) => { asked.push(msg); return false; });
+  globalThis.localStorage.setItem('maze.progress.v1', '{"level":3}');
+  click('wipe');
+  if (!asked.length) r.fail('the reset button went ahead without asking');
+  if (!globalThis.localStorage.getItem('maze.progress.v1')) r.fail('answering no threw the progress away');
+  if (reloads) r.fail('answering no reloaded anyway');
+
+  // 14. A yes takes the progress, every cached file and the worker with it,
+  //     and only then comes back for a fresh copy of the app.
+  const dropped = [];
+  let unregistered = 0;
+  define('confirm', () => true);
+  define('caches', {
+    keys: () => Promise.resolve(['maze-v1', 'maze-v2']),
+    delete: (k) => { dropped.push(k); return Promise.resolve(true); },
+  });
+  define('navigator', {
+    serviceWorker: {
+      getRegistration: () => Promise.resolve({
+        unregister: () => { unregistered++; return Promise.resolve(true); },
+      }),
+    },
+  });
+  click('wipe');
+  if (globalThis.localStorage.getItem('maze.progress.v1')) r.fail('the progress survived the reset');
+
+  // The clearing is promised, so give it a turn of the loop before judging it.
+  setTimeout(() => {
+    if (dropped.length !== 2) r.fail(`dropped ${dropped.length} caches, want 2`);
+    if (!unregistered) r.fail('the service worker was left registered');
+    if (!reloads) r.fail('the app never came back for a fresh copy');
+
+    r.done(
+      `info line: ${info}`,
+      `maze 1: ${m.rows}x${m.cols} at ${cell}px cells -> canvas ${ink.style.width} x ${ink.style.height}`,
+    );
+  }, 0);
 }, 50);

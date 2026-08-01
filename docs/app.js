@@ -564,6 +564,32 @@ function load() {
   } catch (_) { return {}; }
 }
 
+/* ---------------------------------------------------------- fresh start */
+
+// The way out of anything that has gone wrong for good: forget where he had
+// got to, throw away every file the browser is holding on our behalf, and come
+// back for the whole app again. Wired to the small faint button in the line of
+// numbers, and it asks first, because there is no undoing this one.
+function wipe() {
+  if (!confirm('Start again from scratch?\n\n'
+             + 'This forgets which maze you are on and downloads the app afresh.')) return;
+
+  try { localStorage.removeItem(STORE_KEY); } catch (_) { /* nothing was saved anyway */ }
+
+  // The cached copies, then the worker that serves them. Both are allowed to
+  // fail: coming back for a fresh page is worth having either way, so the
+  // reload happens whatever these two make of it.
+  const jobs = [];
+  if (typeof caches !== 'undefined') {
+    jobs.push(caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))));
+  }
+  if (navigator.serviceWorker) {
+    jobs.push(navigator.serviceWorker.getRegistration().then((reg) => reg && reg.unregister()));
+  }
+  const reload = () => location.reload();
+  Promise.all(jobs.map((p) => p.catch(() => {}))).then(reload, reload);
+}
+
 /* ------------------------------------------------------------- controls */
 
 // Again is a single tap away from a long run, so it is undoable as well.
@@ -574,6 +600,7 @@ document.getElementById('reset').addEventListener('click', () => {
 });
 undoBtn.addEventListener('click', undo);
 nextBtn.addEventListener('click', nextMaze);
+document.getElementById('wipe').addEventListener('click', wipe);
 
 endlessBtn.addEventListener('click', () => setEndless(!endless));
 

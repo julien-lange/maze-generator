@@ -106,15 +106,36 @@ body {
 }
 
 /* For you, not for him: what this maze actually is, so you can see which sizes
-   and which generator he gets through. */
-#info {
+   and which generator he gets through, and beside it the one control that is
+   not his either. */
+#footnote {
   flex: none;
-  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px 0;
+}
+
+#info {
+  flex: 1;
+  margin: 0;
   text-align: center;
   font: 500 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: .02em;
   color: rgba(251, 247, 238, .45);
+}
+
+/* Small, faint, and nowhere near the row of big buttons: a child sweeping a
+   hand across the bottom of the screen should never land on it. It asks before
+   it acts as well — down here a wrong tap costs more than a wrong turn. */
+#wipe {
+  flex: none;
+  padding: 3px 6px;
+  border: 1px solid rgba(251, 247, 238, .18);
+  border-radius: 6px;
+  background: none;
+  color: rgba(251, 247, 238, .38);
+  font: 500 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 #controls {
