@@ -4,7 +4,12 @@
 
 const VERSION = 'maze-v3';
 
-const ASSETS = [
+// Everything the maze needs to play with no signal at all. Taken as a batch:
+// addAll rejects the lot if one file fails to arrive, which fails the install,
+// which means this worker never activates and never gets as far as deleting the
+// cache below. On a train with one bar that is the whole point — a version
+// behind and working beats half a version and a hole where the wasm should be.
+const ESSENTIAL = [
   './',
   'index.html',
   'style.css',
@@ -12,24 +17,27 @@ const ASSETS = [
   'pack.json',
   'wasm_exec.js',
   'maze.wasm',
+];
+
+// Dressing for the home screen, allowed to fail one at a time: a missing icon
+// should never cost us the offline maze.
+const EXTRAS = [
   'icon.svg',
   'icon-180.png',
   'icon-512.png',
   'manifest.webmanifest',
 ];
 
+// fresh goes past the browser's own cache to the network. Pages serves these
+// with ten minutes of freshness, and without this a new worker can dutifully
+// install a copy of the very version it is replacing.
+const fresh = (a) => new Request(a, { cache: 'reload' });
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(VERSION)
-      // One asset at a time: addAll rejects the whole batch if a single file is
-      // missing, and a missing icon should not cost us the offline maze.
-      //
-      // cache: 'reload' goes past the browser's own cache to the network. Pages
-      // serves these with ten minutes of freshness, and without this a new
-      // worker can dutifully install a copy of the version it is replacing.
-      .then((c) => Promise.allSettled(
-        ASSETS.map((a) => c.add(new Request(a, { cache: 'reload' })))
-      ))
+      .then((c) => c.addAll(ESSENTIAL.map(fresh))
+        .then(() => Promise.allSettled(EXTRAS.map((a) => c.add(fresh(a))))))
       .then(() => self.skipWaiting())
   );
 });
