@@ -64,14 +64,42 @@ for (const [i, d] of pack.mazes.entries()) {
   }
 
   // 6. Retreating back over the trail rewinds it rather than doubling it up.
+  //    A finger goes back the way it came, so the walk is fed the trail in
+  //    reverse and must give up one cell for each.
   if (sol.length > 3) {
     L.reset();
     L.advance(m.start[0], m.start[1]);
     for (const [row, col] of sol) L.walkTowards(row, col);
-    L.walkTowards(sol[1][0], sol[1][1]);
+    for (let k = sol.length - 1; k >= 1; k--) L.walkTowards(sol[k][0], sol[k][1]);
     st = L.state();
     if (st.path.length !== 2) r.fail(`#${i}: rewind left ${st.path.length} cells, want 2`);
     if (st.won) r.fail(`#${i}: still flagged as won after retreating`);
+  }
+
+  // 7. A fingertip straying over a wall onto a corridor drawn long ago must
+  //    cost nothing. In a perfect maze two cells that touch without being
+  //    neighbours on the trail have a wall between them, so this is the pair
+  //    to aim at: it is the stray that used to unwind a whole run at once.
+  const stray = [];
+  for (let a = 0; a < sol.length && !stray.length; a++) {
+    for (let b = a + 2; b < sol.length; b++) {
+      if (Math.abs(sol[a][0] - sol[b][0]) + Math.abs(sol[a][1] - sol[b][1]) === 1) {
+        stray.push(a, b);
+        break;
+      }
+    }
+  }
+  if (stray.length) {
+    const [a, b] = stray;
+    L.reset();
+    L.advance(m.start[0], m.start[1]);
+    for (let k = 1; k <= b; k++) L.walkTowards(sol[k][0], sol[k][1]);
+    const was = L.state().path.length;
+    L.walkTowards(sol[a][0], sol[a][1]);
+    st = L.state();
+    if (st.path.length !== was) {
+      r.fail(`#${i}: straying onto step ${a} from step ${b} took the trail from ${was} to ${st.path.length}`);
+    }
   }
 }
 

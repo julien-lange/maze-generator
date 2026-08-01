@@ -141,6 +141,9 @@ body {
 #controls button span { font-size: 22px; line-height: 1; }
 #controls button small { font-size: 11px; opacity: .8; font-weight: 500; }
 #controls button:active { background: rgba(251, 247, 238, .28); }
+/* Nothing to take back yet: still there, still the same size, plainly not for
+   pressing — the row must not shuffle about under a finger already moving. */
+#controls button:disabled { opacity: .3; }
 #controls #next.ready { background: var(--gold); color: var(--bar); animation: nudge 1.2s ease-in-out infinite; }
 
 @keyframes nudge {

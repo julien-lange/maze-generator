@@ -20,7 +20,15 @@ function ctx2d() {
     textAlign: '', textBaseline: '',
     setTransform: rec('setTransform'), clearRect: rec('clearRect'), fillRect: rec('fillRect'),
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
-    stroke: rec('stroke'), fill: rec('fill'), arc: rec('arc'), setLineDash: rec('setLineDash'),
+    stroke: rec('stroke'), fill: rec('fill'), setLineDash: rec('setLineDash'),
+  };
+  // The head of the trail is a disc, and the first arc of a redraw is it, so
+  // keeping the arguments is what lets the drag checks below say where the
+  // head ended up — and an empty list says the trail never moved.
+  ctx.arc = (...a) => {
+    calls.arc = (calls.arc || 0) + 1;
+    (calls.arcs = calls.arcs || []).push(a);
+    return a;
   };
   // Emoji are drawn with fillText, and the canvas applies the fill's alpha to
   // colour glyphs, so record what the fill was at the moment each one was drawn.
@@ -117,12 +125,27 @@ setTimeout(() => {
   // Reconstruct the geometry the way fit() computes it, to aim the pointer.
   const cell = Math.max(12, Math.floor(Math.min((STAGE_W - 20) / m.cols, (STAGE_H - 20) / m.rows)));
   const wallW = Math.max(2, Math.round(cell * 0.11));
-  const at = (row, col) => ({
-    clientX: wallW / 2 + col * cell + cell / 2,
-    clientY: wallW / 2 + row * cell + cell / 2,
+  // frac takes cell coordinates rather than cell numbers, so a pointer can be
+  // put part of the way into a cell: 3.5 is the middle of row 3, 3.2 is a fifth
+  // of the way in from its top edge.
+  const frac = (fr, fc) => ({
+    clientX: wallW / 2 + fc * cell,
+    clientY: wallW / 2 + fr * cell,
     pointerId: 1, preventDefault() {},
   });
+  const at = (row, col) => frac(row + 0.5, col + 0.5);
+  // between walks from the middle of one cell towards the middle of another:
+  // t of 0.5 lands on the wall between them, 0.7 a fifth of a cell past it.
+  const between = (from, to, t) =>
+    frac(from[0] + 0.5 + t * (to[0] - from[0]), from[1] + 0.5 + t * (to[1] - from[1]));
   const fire = (type, ev) => (ink._handlers[type] || []).forEach((h) => h(ev));
+  const headCell = () => {
+    const a = (calls.arcs || [])[0];
+    return a && [
+      Math.round((a[1] - wallW / 2 - cell / 2) / cell),
+      Math.round((a[0] - wallW / 2 - cell / 2) / cell),
+    ];
+  };
 
   // 2. A tap far from the start draws nothing at all.
   const before = { stroke: calls.stroke | 0, arc: calls.arc | 0 };
@@ -144,30 +167,63 @@ setTimeout(() => {
   click('reset');
   if (!get('cheer').hidden) r.fail('reset left the celebration up');
 
-  // 5. The info line reports what this maze actually is.
+  // 5. A hand shaking on the spot must not eat the trail behind it, while a
+  //    finger that genuinely goes back a cell still retreats. A fingertip is
+  //    wider than a cell, so without that margin every tremor cost a cell.
+  const sol = m.solution;
+  fire('pointerdown', at(m.start[0], m.start[1]));
+  fire('pointermove', at(sol[1][0], sol[1][1]));
+  fire('pointermove', at(sol[2][0], sol[2][1]));
+  calls.arcs = [];
+  fire('pointermove', between(sol[2], sol[1], 0.7));     // a fifth of a cell back
+  if (calls.arcs.length) r.fail(`a wobble backwards moved the head to ${headCell()}`);
+  fire('pointermove', between(sol[2], sol[1], 0.95));    // properly into the cell behind
+  if (String(headCell()) !== String(sol[1])) r.fail(`a step back left the head at ${headCell()}`);
+  fire('pointerup', at(sol[1][0], sol[1][1]));
+
+  // 6. Undo hands back the trail as it stood before the last gesture, and
+  //    before Again too: neither a bad drag nor a mistap should cost a run.
+  click('reset');
+  fire('pointerdown', at(m.start[0], m.start[1]));
+  for (const [row, col] of sol) fire('pointermove', at(row, col));
+  fire('pointerup', at(m.end[0], m.end[1]));
+  if (get('undo').disabled) r.fail('a drag that drew a trail left nothing to undo');
+  click('reset');
+  calls.arcs = [];
+  click('undo');
+  if (String(headCell()) !== String(m.end)) r.fail(`undo after Again left the head at ${headCell()}`);
+  // Down to nothing: the head is the only disc drawn filled, so an undo that
+  // fills nothing is one that gave back an empty trail. (Counting arcs would
+  // not do — the "start here" ring is one too.)
+  let fills = 0;
+  for (let k = 0; k < 40 && !get('undo').disabled; k++) { fills = calls.fill | 0; click('undo'); }
+  if (!get('undo').disabled) r.fail('undo never ran out of trails to give back');
+  if ((calls.fill | 0) !== fills) r.fail('undoing everything left a trail behind');
+
+  // 7. The info line reports what this maze actually is.
   const info = get('info').textContent.replace(/ /g, ' ');   // hard spaces within items
   for (const part of [`#1/${n}`, `${m.rows}×${m.cols}`, m.algo,
                       `${m.steps} steps`, `${m.junctions} junctions`, `score ${m.score}`]) {
     if (!info.includes(part)) r.fail(`info line "${info}" is missing "${part}"`);
   }
 
-  // 6. The hint button is gone from the markup, the code and the styles.
+  // 8. The hint button is gone from the markup, the code and the styles.
   for (const f of ['app.js', 'index.html', 'style.css']) {
     if (fs.readFileSync(path.join(DOCS, f), 'utf8').toLowerCase().includes('hint')) {
       r.fail(`${f} still mentions the hint button`);
     }
   }
 
-  // 7. Next advances the level and saves the progress.
+  // 9. Next advances the level and saves the progress.
   click('next');
   if (get('level').textContent !== `Maze 2 of ${n}`) r.fail(`next gave "${get('level').textContent}"`);
   if (JSON.parse(globalThis.localStorage.getItem('maze.progress.v1')).level !== 1) r.fail('progress not saved');
 
-  // 8. The endless button is there from the start, once the generator is ready.
+  // 10. The endless button is there from the start, once the generator is ready.
   if (!globalThis.mazeGenerate) r.fail('the fake wasm never loaded, so this proves nothing');
   if (get('endless').hidden) r.fail('endless button hidden even though the generator is ready');
 
-  // 9. It switches to endless and back without losing his place in the pack.
+  // 11. It switches to endless and back without losing his place in the pack.
   const wasAt = get('info').textContent;
   click('endless');
   if (!get('info').textContent.startsWith('∞')) r.fail('the button did not switch to endless mode');
@@ -175,8 +231,8 @@ setTimeout(() => {
   click('endless');
   if (get('info').textContent !== wasAt) r.fail(`came back to "${get('info').textContent}", want "${wasAt}"`);
 
-  // 10. Running off the end of the pack switches to endless by itself, and
-  //     coming back must not fall off the end of the array.
+  // 12. Running off the end of the pack switches to endless by itself, and
+  //      coming back must not fall off the end of the array.
   for (let i = 0; i < n + 2; i++) click('next');
   if (!get('info').textContent.startsWith('∞')) r.fail('did not switch to endless at the end of the pack');
   click('endless');

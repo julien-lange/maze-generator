@@ -2,7 +2,7 @@
 // car, on a train, wherever. Bump VERSION whenever you republish a new pack or
 // a new wasm build, or phones will happily keep serving yesterday's.
 
-const VERSION = 'maze-v1';
+const VERSION = 'maze-v2';
 
 const ASSETS = [
   './',

@@ -77,6 +77,7 @@ const cheer = document.getElementById('cheer');
 const nextBtn = document.getElementById('next');
 const infoEl = document.getElementById('info');
 const endlessBtn = document.getElementById('endless');
+const undoBtn = document.getElementById('undo');
 
 let maze = null;
 let pack = [];
@@ -88,6 +89,8 @@ let wantEndless = false; // restore endless mode once the wasm has arrived
 
 let path = [];          // the trail, as [row, col] cells
 let seen = new Map();   // "row,col" -> position in path, for O(1) backtracking
+let history = [];       // trails as they stood before each gesture, for Undo
+let pending = null;     // the trail as it stood when this gesture began
 let drawing = false;
 let won = false;
 let celebrated = false;   // one cheer per arrival, however much he wiggles
@@ -237,9 +240,17 @@ function pulseStart() {
 
 const key = (r, c) => r * maze.cols + c;
 
-// advance moves the head one cell. Stepping back onto the trail rewinds to that
-// point rather than doubling back over itself, so retreating out of a dead end
-// is the same gesture as walking into it.
+// settle works out what the trail now means. Backing out of the end undoes the
+// win, so arriving there again can count afresh.
+function settle() {
+  const [r, c] = path[path.length - 1];
+  won = r === maze.end[0] && c === maze.end[1];
+  if (!won) celebrated = false;
+}
+
+// advance puts the head on a cell outright: a fresh one extends the trail, one
+// already on it rewinds to that point. Only a deliberate gesture may do this —
+// a finger put down on the trail partway along. A drag walks instead.
 function advance(r, c) {
   const k = key(r, c);
   if (seen.has(k)) {
@@ -250,23 +261,29 @@ function advance(r, c) {
     seen.set(k, path.length);
     path.push([r, c]);
   }
-  won = path[path.length - 1][0] === maze.end[0] && path[path.length - 1][1] === maze.end[1];
-  if (!won) celebrated = false;   // backed out again: arriving can count afresh
+  settle();
+}
+
+// retreat takes the head back one cell, uncovering the cell it came from. The
+// start is never given up: there is nowhere behind it to stand.
+function retreat() {
+  if (path.length < 2) return;
+  const [r, c] = path.pop();
+  seen.delete(key(r, c));
+  settle();
 }
 
 // walkTowards steps the head at most a few cells towards a target, one open
 // wall at a time. A finger moving fast reports positions several cells apart,
 // and this is what turns those jumps back into a legal walk.
+//
+// Every move is a step between neighbours: forward onto fresh ground, or back
+// over the cell just left. Nowhere else on the trail may be entered. These
+// mazes are perfect, so a corridor commonly runs alongside the one it came
+// from with a single wall between them — without that rule a fingertip
+// straying a cell sideways lands on ground covered hundreds of steps ago, and
+// unwinds every one of them.
 function walkTowards(tr, tc) {
-  // Landing back on the trail always means retreating, so rewind straight to
-  // that cell. Stepping there geometrically could round a corner onto a
-  // neighbouring corridor instead, which is how a quick flick backwards would
-  // otherwise sprout a branch he never drew.
-  if (seen.has(key(tr, tc))) {
-    advance(tr, tc);
-    return;
-  }
-
   for (let guard = 0; guard < 64; guard++) {
     const [r, c] = path[path.length - 1];
     if (r === tr && c === tc) return;
@@ -282,7 +299,15 @@ function walkTowards(tr, tc) {
       const nr = r + sr, nc = c + sc;
       if (!maze.inside(nr, nc)) continue;
       if (!maze.linked(r, c, nr, nc)) continue;
-      advance(nr, nc);
+      if (seen.has(key(nr, nc))) {
+        // The cell behind is the one square of trail a walk may re-enter.
+        // Anything else under the finger is a stray, and a stray must cost
+        // nothing at all rather than the whole run back to it.
+        if (seen.get(key(nr, nc)) !== path.length - 2) return;
+        retreat();
+      } else {
+        advance(nr, nc);
+      }
       moved = true;
       break;
     }
@@ -290,10 +315,27 @@ function walkTowards(tr, tc) {
   }
 }
 
-function cellAt(e) {
+// A fingertip is wider than a cell, so which cell it is on is decided with a
+// margin: hold stays on the cell already occupied until the pointer is
+// DEADZONE of the way into the next. Cells further off are taken at once —
+// the finger has plainly travelled rather than trembled.
+const DEADZONE = 0.35;
+
+function hold(f, cur) {
+  const i = Math.floor(f);
+  if (i === cur + 1 && f - i < DEADZONE) return cur;
+  if (i === cur - 1 && cur - f < DEADZONE) return cur;
+  return i;
+}
+
+// cellAt reports the cell under a pointer. Given the cell to measure from —
+// the head, mid-drag — it applies that margin; a tap is taken literally.
+function cellAt(e, from) {
   const box = inkCanvas.getBoundingClientRect();
-  const r = Math.floor((e.clientY - box.top - oy) / cell);
-  const c = Math.floor((e.clientX - box.left - ox) / cell);
+  const fr = (e.clientY - box.top - oy) / cell;
+  const fc = (e.clientX - box.left - ox) / cell;
+  const r = from ? hold(fr, from[0]) : Math.floor(fr);
+  const c = from ? hold(fc, from[1]) : Math.floor(fc);
   return [
     Math.min(maze.rows - 1, Math.max(0, r)),
     Math.min(maze.cols - 1, Math.max(0, c)),
@@ -306,9 +348,50 @@ function resetPath() {
   won = false;
   celebrated = false;
   drawing = false;
+  pending = null;
   clearTimeout(cheerTimer);
   cheer.hidden = true;
   nextBtn.classList.remove('ready');
+  drawInk();
+}
+
+/* ------------------------------------------------------------------ undo */
+
+// A gesture that went wrong should cost the gesture, not the run. The trail is
+// photographed whenever a finger goes down and the picture kept if the gesture
+// changed anything, so Undo can hand back the trail as it stood before it.
+const UNDO_MAX = 24;
+
+const head = (t) => (t.length ? t[t.length - 1] : null);
+const sameTrail = (a, b) =>
+  a.length === b.length && (!a.length || (head(a)[0] === head(b)[0] && head(a)[1] === head(b)[1]));
+
+function keep(trail) {
+  if (!trail || sameTrail(trail, path)) return;   // nothing moved: nothing to undo
+  history.push(trail);
+  if (history.length > UNDO_MAX) history.shift();
+  undoBtn.disabled = false;
+}
+
+function forget() {
+  history = [];
+  undoBtn.disabled = true;
+}
+
+function undo() {
+  if (!history.length) return;
+  path = history.pop();
+  seen = new Map();
+  for (let i = 0; i < path.length; i++) seen.set(key(path[i][0], path[i][1]), i);
+  won = path.length > 0 && head(path)[0] === maze.end[0] && head(path)[1] === maze.end[1];
+  celebrated = won;              // a winning trail restored has been cheered already
+  drawing = false;
+  pending = null;
+  clearTimeout(cheerTimer);
+  cheer.hidden = true;
+  if (won) nextBtn.classList.add('ready');
+  else nextBtn.classList.remove('ready');
+  undoBtn.disabled = history.length === 0;
   drawInk();
 }
 
@@ -316,6 +399,9 @@ function resetPath() {
 
 inkCanvas.addEventListener('pointerdown', (e) => {
   const [r, c] = cellAt(e);
+  // Before anything moves, including the rewind below: putting a finger down
+  // on the trail is deliberate, but it can still be the wrong bit of trail.
+  pending = path.slice();
 
   if (path.length === 0) {
     // Only the start counts, but generously: anywhere in the eight cells
@@ -342,10 +428,12 @@ inkCanvas.addEventListener('pointerdown', (e) => {
 
 inkCanvas.addEventListener('pointermove', (e) => {
   if (!drawing) return;
-  const [r, c] = cellAt(e);
-  const before = path.length;
+  const [r, c] = cellAt(e, path[path.length - 1]);
+  const before = path.length, stood = path[path.length - 1];
   walkTowards(r, c);
-  if (path.length !== before) {
+  // The head can move without the trail changing length: at a junction one
+  // event can step back and then away down the other branch.
+  if (path.length !== before || path[path.length - 1] !== stood) {
     drawInk();
     if (won) celebrate();
   }
@@ -355,6 +443,8 @@ inkCanvas.addEventListener('pointermove', (e) => {
 for (const type of ['pointerup', 'pointercancel']) {
   inkCanvas.addEventListener(type, (e) => {
     drawing = false;
+    keep(pending);
+    pending = null;
     if (inkCanvas.hasPointerCapture(e.pointerId)) inkCanvas.releasePointerCapture(e.pointerId);
   });
 }
@@ -400,6 +490,7 @@ function confetti() {
 function show(data) {
   maze = new Maze(data);
   resetPath();
+  forget();               // a new maze: there is no earlier trail to go back to
   fit();
   drawWalls();
   drawInk();
@@ -471,7 +562,13 @@ function load() {
 
 /* ------------------------------------------------------------- controls */
 
-document.getElementById('reset').addEventListener('click', resetPath);
+// Again is a single tap away from a long run, so it is undoable as well.
+document.getElementById('reset').addEventListener('click', () => {
+  const was = path.slice();
+  resetPath();
+  keep(was);
+});
+undoBtn.addEventListener('click', undo);
 nextBtn.addEventListener('click', nextMaze);
 
 endlessBtn.addEventListener('click', () => setEndless(!endless));
