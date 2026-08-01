@@ -173,15 +173,15 @@ function tintCell([r, c], colour) {
   wallsCtx.fillRect(px(c), py(r), cell, cell);
 }
 
-function mark([r, c], glyph) {
+function mark([r, c], glyph, ctx = wallsCtx) {
   // Opaque fill, explicitly. Colour emoji are bitmap glyphs and the canvas
   // applies the fill's alpha to them, so inheriting the cell tint's rgba from
   // tintCell above would draw both animals at a fifth of their opacity.
-  wallsCtx.fillStyle = '#2f3542';
-  wallsCtx.font = Math.floor(cell * 0.62) + 'px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
-  wallsCtx.textAlign = 'center';
-  wallsCtx.textBaseline = 'middle';
-  wallsCtx.fillText(glyph, cx(c), cy(r) + cell * 0.04);
+  ctx.fillStyle = '#2f3542';
+  ctx.font = Math.floor(cell * 0.62) + 'px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, cx(c), cy(r) + cell * 0.04);
 }
 
 function drawInk() {
@@ -196,6 +196,10 @@ function drawInk() {
     inkCtx.beginPath();
     inkCtx.arc(cx(c), cy(r), cell * 0.2, 0, Math.PI * 2);
     inkCtx.fill();
+    // The trail starts on top of the animal it set out from and would bury it.
+    // It lives on the walls canvas, under the ink, so the only way to keep it
+    // in sight is to put it down again over the trail.
+    mark(maze.start, maze.startMark, inkCtx);
   }
 
   const left = pulseUntil - performance.now();

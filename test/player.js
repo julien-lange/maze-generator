@@ -172,7 +172,14 @@ setTimeout(() => {
   //    wider than a cell, so without that margin every tremor cost a cell.
   const sol = m.solution;
   fire('pointerdown', at(m.start[0], m.start[1]));
+
+  // Regression: the trail begins on top of the animal it set out from, and the
+  // walls beneath it are not redrawn mid-drag, so the start animal must be put
+  // down again over the ink or it disappears for the rest of the maze.
+  const glyphs = calls.fillText;
   fire('pointermove', at(sol[1][0], sol[1][1]));
+  if (calls.fillText === glyphs) r.fail('the trail buried the start animal');
+
   fire('pointermove', at(sol[2][0], sol[2][1]));
   calls.arcs = [];
   fire('pointermove', between(sol[2], sol[1], 0.7));     // a fifth of a cell back
