@@ -1,5 +1,6 @@
 # Everything the browser needs lives in docs/, which is what GitHub Pages
 # serves. `make` rebuilds both halves of it.
+# make pack SEED=0 to generate a new
 
 PACK ?= 40
 ROWS ?= 20
