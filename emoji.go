@@ -47,7 +47,7 @@ func writeEmojiSheet(dest string) {
 		"grid-auto-rows:%dpx;width:%dpx}\n", emojiCols, emojiTile, emojiTile, emojiCols*emojiTile)
 	fmt.Fprintf(&b, "span{display:flex;align-items:center;justify-content:center;"+
 		"font-size:%dpx;line-height:1;font-family:\"Apple Color Emoji\",\"Segoe UI Emoji\","+
-		"\"Noto Color Emoji\",sans-serif}\n", emojiTile*82/100)
+		"\"Noto Color Emoji\",sans-serif}\n", emojiTile*76/100)
 	b.WriteString("</style>\n<div id=\"g\">")
 	for _, a := range animals {
 		fmt.Fprintf(&b, "<span>%s</span>", a)

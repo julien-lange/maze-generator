@@ -60,6 +60,32 @@ Drawing is cell-by-cell rather than freehand. Walls block the finger, a fast
 flick is filled back in as a legal walk, and sliding back over the trail rewinds
 it — so retreating out of a dead end is the same gesture as going in.
 
+The finger steers the trail like a string rather than sitting on its head.
+Touch anywhere on the board and drag: the head slides along the corridors one
+cell for every cell of drag (`slide` in `docs/app.js`). Its position is
+continuous: it sits some fraction of the way along a passage, moved by the
+part of the finger's movement that points along it, and the trail only gains
+or gives up a cell when the head arrives. A sideways wobble moves it not at
+all. It only goes the way the finger pulls: dragged straight on at a bend it
+stops at the wall rather than turning the corner by itself. On a cell it
+waits for a short, definite movement before choosing, and if momentum carries
+it a hair into the wrong branch, pulling the other way slides it back and
+round. Movement the
+head cannot follow, into a wall or sideways, stretches it towards the finger,
+and it springs back round when the finger lifts. The finger can be lifted and
+put down anywhere to carry on, and the head stays where it slid to.
+
+The trail is saved as it is drawn (`maze.trail.v1`, with the maze itself for
+endless ones), so closing the app halfway brings the run back on reopening.
+On Android, a swipe in from the screen edge is the back gesture, which closes
+an installed app. The board keeps a strip clear of the edges on touch screens,
+and once there is a trail the page holds an extra history entry so that a
+back swipe is caught rather than closing the maze.
+
+The trail is drawn as a rainbow: each cell along it moves a twelfth of the way
+round the colour wheel, so the colours cycle every dozen cells whatever the
+size of the maze. Once the maze is solved a white ribbon shines under it.
+
 ### Which maze is this?
 
 Packs alternate between the two generators, because they fail differently and a
@@ -114,14 +140,17 @@ two short strings, so this costs less than a dependency and keeps the module
 free of them. Cells are capped at about 28mm, which is why the small early
 mazes do not stretch to fill a whole sheet.
 
-The animals come too. PDF has no way to draw a colour emoji as text — the
+The start and end marks come too: a friend (a butterfly, a bunny, a unicorn…)
+at the start, and someone magical (a princess, a fairy, a mermaid, a castle…)
+waiting at the end; `friends` and `royals` in `print.go`.
+PDF has no way to draw a colour emoji as text — the
 glyphs live in bitmap or layered-colour tables its font model knows nothing
 about — so they travel as images instead: the colour in one stream and the
 transparency in a soft mask beside it, each glyph embedded once however many
 sheets use it. That is most of the 820 KB.
 
 `assets/emoji` holds those images, pre-rendered and committed. Rebuild them only
-if the `animals` list in `print.go` changes:
+if the `friends` or `royals` lists in `print.go` change:
 
     make emoji-assets
 

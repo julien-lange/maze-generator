@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"strings"
 )
 
@@ -28,25 +29,35 @@ type layout struct {
 }
 
 // emojiWidth is how many columns an emoji takes up in a monospace grid. The
-// animals below are all East Asian Wide, so they are two columns each even
+// marks below are all East Asian Wide, so they are two columns each even
 // though they are a single rune, and padding has to be counted accordingly.
 const emojiWidth = 2
 
-// animals are the markers available for the start and end cells. All are wide
-// by default, with no variation selector needed, so none of them collapse to a
-// single column in a terminal.
-var animals = []string{
-	"🐭", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸",
-	"🐵", "🐔", "🦉", "🐺", "🐗", "🐴", "🦄", "🐢", "🐙", "🦀",
-	"🐬", "🐳", "🦈", "🐊", "🦓", "🐘", "🦏", "🐫", "🦒", "🐕",
-	"🐈", "🦌", "🐇", "🦔", "🐝", "🦋", "🐞", "🐌", "🐧", "🦆",
+// Each maze is a little journey: a friend sets out from the start cell to find
+// someone magical waiting at the end — a butterfly flying to the princess, a
+// bunny hopping to the fairy's castle. All are wide by default, with no
+// variation selector or joiner needed, so none of them collapse to a single
+// column in a terminal.
+var friends = []string{
+	"🦋", "🐰", "🐱", "🐶", "🐹", "🦄", "🐞", "🐝", "🦢", "🦩",
+	"🐣", "🐼", "🐨", "🦔", "🐬", "🐠", "🐭", "🦊", "🐻", "🐧",
+	"🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🦉", "🐺", "🐗",
+	"🐴", "🐢", "🐙", "🦀", "🐳", "🦈", "🐊", "🦓", "🐘", "🦏",
+	"🐫", "🦒", "🐕", "🐈", "🦌", "🐇", "🐌", "🦆",
 }
 
-// AnimalPair picks two different animals to stand at the two ends of the maze.
+// royals wait at the end. The list is short on purpose, so the princess and
+// the fairy turn up often.
+var royals = []string{
+	"👸", "🧚", "🧜", "🏰", "👑", "🌈", "💖", "🌸",
+}
+
+// animals is every mark the game can draw, for the PDF's pre-rendered images.
+var animals = slices.Concat(friends, royals)
+
+// AnimalPair picks a friend to start the maze and someone magical to end it.
 func AnimalPair(rng *rand.Rand) (start, end string) {
-	i := rng.IntN(len(animals))
-	j := (i + 1 + rng.IntN(len(animals)-1)) % len(animals) // anything but i
-	return animals[i], animals[j]
+	return friends[rng.IntN(len(friends))], royals[rng.IntN(len(royals))]
 }
 
 // interior renders the inside of one cell: blank, or an animal centred in it.

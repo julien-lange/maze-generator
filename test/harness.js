@@ -29,9 +29,9 @@ function loadLogic() {
     'var maze, path = [], seen = new Map(), won = false;\n' +
     slice('function decodeBits', '/* ----------------------------------------------------------------- state */') +
     slice('const key = (r, c)', '/* -------------------------------------------------------------- pointers */') +
-    '\nmodule.exports = { Maze, advance, walkTowards,' +
+    '\nmodule.exports = { Maze, advance, walkTowards, slide,' +
     ' set: (m) => { maze = m; },' +
-    ' reset: () => { path = []; seen = new Map(); won = false; },' +
+    ' reset: () => { path = []; seen = new Map(); won = false; ropeReset(); },' +
     ' state: () => ({ path, won }) };';
 
   const mod = new (require('module'))();

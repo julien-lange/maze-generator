@@ -103,6 +103,73 @@ for (const [i, d] of pack.mazes.entries()) {
   }
 }
 
+// 8. The string. Pulled roughly the right way for each step of the solution,
+//    up to 25 degrees off, the head follows it exactly; a long pull along
+//    the first corridor never crosses a wall; and a tug back short of a full
+//    step gives nothing up.
+for (const [i, d] of pack.mazes.entries()) {
+  const m = new L.Maze(d);
+  L.set(m);
+  const sol = m.solution;
+  const STEP = 20;
+  let seed = i * 7919 + 1;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  L.reset();
+  L.advance(m.start[0], m.start[1]);
+  // Aim at whichever cell of the solution comes next after the head, since
+  // the head may have run on ahead of the last pull.
+  for (let guard = 0; guard < sol.length * 8; guard++) {
+    const p = L.state().path;
+    if (p.length >= sol.length || String(p.at(-1)) !== String(sol[p.length - 1])) break;
+    const head = p.at(-1), next = sol[p.length];
+    const a = Math.atan2(next[0] - head[0], next[1] - head[1]) + (rand() - 0.5) * (50 * Math.PI / 180);
+    L.slide(Math.cos(a) * STEP * 0.25, Math.sin(a) * STEP * 0.25, STEP);
+  }
+  let st = L.state();
+  if (JSON.stringify(st.path) !== JSON.stringify(sol)) {
+    r.fail(`#${i}: a rough pull along the solution drew ${st.path.length} cells, not the ${sol.length} of the solution`);
+  }
+  if (!st.won) r.fail(`#${i}: a rough pull along the solution did not win`);
+
+  L.reset();
+  L.advance(m.start[0], m.start[1]);
+  L.slide(STEP * 40, STEP * 40, STEP);
+  st = L.state();
+  for (let k = 1; k < st.path.length; k++) {
+    if (!m.linked(st.path[k - 1][0], st.path[k - 1][1], st.path[k][0], st.path[k][1])) {
+      r.fail(`#${i}: a long pull tunnelled through a wall at step ${k}`);
+    }
+  }
+
+  if (sol.length > 3) {
+    L.reset();
+    L.advance(m.start[0], m.start[1]);
+    for (let k = 1; k <= 3; k++) L.advance(sol[k][0], sol[k][1]);
+    const back = [sol[2][1] - sol[3][1], sol[2][0] - sol[3][0]];
+    L.slide(back[0] * STEP * 0.9, back[1] * STEP * 0.9, STEP);
+    if (L.state().path.length !== 4) r.fail(`#${i}: a tug back of nine-tenths of a step gave up a cell`);
+  }
+}
+
+// 9. A pull never turns a corner the finger has not turned: dragged straight
+//    on at a bend, the head stops there instead of heading off round it.
+for (const [i, d] of pack.mazes.entries()) {
+  const m = new L.Maze(d);
+  L.set(m);
+  const sol = m.solution;
+  const k = sol.findIndex((cur, j) => j > 0 && j < sol.length - 1 &&
+    (sol[j + 1][0] - cur[0] !== cur[0] - sol[j - 1][0] || sol[j + 1][1] - cur[1] !== cur[1] - sol[j - 1][1]));
+  if (k < 0) continue;
+  const dr = sol[k][0] - sol[k - 1][0], dc = sol[k][1] - sol[k - 1][1];
+  if (m.linked(sol[k][0], sol[k][1], sol[k][0] + dr, sol[k][1] + dc)) continue;   // a fork, not a bend
+  L.reset();
+  for (let j = 0; j <= k; j++) L.advance(sol[j][0], sol[j][1]);
+  for (let n = 0; n < 12; n++) L.slide(dc * 5, dr * 5, 20);
+  const p = L.state().path;
+  if (p.length !== k + 1) r.fail(`#${i}: a straight pull at the bend after step ${k} went round it to ${p.at(-1)}`);
+}
+
 // 7. The pack must be a mix of both generators.
 const byAlgo = {};
 for (const m of pack.mazes) byAlgo[m.algo] = (byAlgo[m.algo] || 0) + 1;

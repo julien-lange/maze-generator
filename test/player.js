@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { DOCS, readPack, results } = require('./harness');
+const { DOCS, readPack, loadLogic, results } = require('./harness');
 
 const pack = readPack();
 const r = results('PLAYER CHECKS');
@@ -22,6 +22,13 @@ function ctx2d() {
     setTransform: rec('setTransform'), clearRect: rec('clearRect'), fillRect: rec('fillRect'),
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
     stroke: rec('stroke'), fill: rec('fill'), setLineDash: rec('setLineDash'),
+    ellipse: rec('ellipse'),
+  };
+  // The trail is a rainbow, painted with one gradient per step; keep every
+  // colour stop so the checks below can tell a rainbow from a single colour.
+  ctx.createLinearGradient = (...a) => {
+    calls.createLinearGradient = (calls.createLinearGradient || 0) + 1;
+    return { args: a, addColorStop: (o, c) => (calls.colourStops = calls.colourStops || new Set()).add(c) };
   };
   // The head of the trail is a disc, and the first arc of a redraw is it, so
   // keeping the arguments is what lets the drag checks below say where the
@@ -62,6 +69,7 @@ el._ctx = {};
 
 const STAGE_W = 390;   // a phone, roughly
 const STAGE_H = 560;
+const SIDE = 24;       // the strip kept clear of Android's back gesture; matchMedia says touch
 
 const nodes = {};
 const get = (id) => (nodes[id] = nodes[id] || el(id));
@@ -74,6 +82,13 @@ const define = (name, value) =>
   Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
 
 define('window', globalThis);
+// The page listens on window for the back swipe (popstate) and for being put
+// away (pagehide), and pushes a history entry to catch the swipe.
+const winHandlers = {};
+define('addEventListener', (t, fn) => { (winHandlers[t] = winHandlers[t] || []).push(fn); });
+const fireWin = (t) => (winHandlers[t] || []).forEach((h) => h({}));
+const pushed = [];
+define('history', { pushState: (st) => { pushed.push(st); } });
 define('document', { getElementById: get, createElement: () => el('span'), addEventListener: () => {} });
 define('location', { protocol: 'file:', reload: () => { reloads++; } });   // no worker registered
 define('navigator', {});                            // no serviceWorker in it, so none is registered
@@ -125,7 +140,9 @@ setTimeout(() => {
   if (get('stars').textContent !== wantStars) r.fail(`stars say "${get('stars').textContent}", want "${wantStars}"`);
 
   // Reconstruct the geometry the way fit() computes it, to aim the pointer.
-  const cell = Math.max(12, Math.floor(Math.min((STAGE_W - 20) / m.cols, (STAGE_H - 20) / m.rows)));
+  const cellFor = (mz) =>
+    Math.max(12, Math.floor(Math.min((STAGE_W - SIDE * 2) / mz.cols, (STAGE_H - 20) / mz.rows)));
+  const cell = cellFor(m);
   const wallW = Math.max(2, Math.round(cell * 0.11));
   // frac takes cell coordinates rather than cell numbers, so a pointer can be
   // put part of the way into a cell: 3.5 is the middle of row 3, 3.2 is a fifth
@@ -149,13 +166,13 @@ setTimeout(() => {
     ];
   };
 
-  // 2. A tap far from the start draws nothing at all.
-  const before = { stroke: calls.stroke | 0, arc: calls.arc | 0 };
+  // 2. The finger holds the end of a string, not the head, so a touch
+  //    anywhere on the board picks it up at the start animal and goes no
+  //    further until the finger moves.
+  calls.arcs = [];
   fire('pointerdown', at(m.rows - 1, m.cols - 1));
   fire('pointerup', at(m.rows - 1, m.cols - 1));
-  if ((calls.stroke | 0) !== before.stroke || (calls.arc | 0) !== before.arc) {
-    r.fail('a tap away from the start began a trail');
-  }
+  if (String(headCell()) !== String(m.start)) r.fail(`a touch far off put the head at ${headCell()}, want the start`);
 
   // 3. A full drag along the solution wins and shows the end animal.
   fire('pointerdown', at(m.start[0], m.start[1]));
@@ -164,6 +181,10 @@ setTimeout(() => {
   if (get('cheer').hidden) r.fail('tracing the solution did not celebrate');
   if (get('cheer-mark').textContent !== m.endMark) r.fail('celebration shows the wrong animal');
   if (!calls.stroke) r.fail('the trail was never stroked');
+  // The trail is a rainbow, not one flat colour: the solution is long enough to
+  // run through several hues.
+  const hues = new Set([...(calls.colourStops || [])].map((c) => String(c).match(/hsl\((\d+)/)?.[1]));
+  if (hues.size < 3) r.fail(`the trail used ${hues.size} colours, want a rainbow`);
 
   // 4. Reset clears the celebration.
   click('reset');
@@ -183,12 +204,42 @@ setTimeout(() => {
   if (calls.fillText === glyphs) r.fail('the trail buried the start animal');
 
   fire('pointermove', at(sol[2][0], sol[2][1]));
+  // The head's position is continuous. A tug back short of a full step slides
+  // it most of the way back but gives nothing up: lift the finger there and
+  // the trail still holds all three cells, with the head drawn part-way.
+  const trail = () => JSON.parse(globalThis.localStorage.getItem('maze.trail.v1')).path.length;
+  fire('pointermove', between(sol[2], sol[1], 0.9));     // nine-tenths of a step back
   calls.arcs = [];
-  fire('pointermove', between(sol[2], sol[1], 0.7));     // a fifth of a cell back
-  if (calls.arcs.length) r.fail(`a wobble backwards moved the head to ${headCell()}`);
-  fire('pointermove', between(sol[2], sol[1], 0.95));    // properly into the cell behind
-  if (String(headCell()) !== String(sol[1])) r.fail(`a step back left the head at ${headCell()}`);
+  fire('pointerup', between(sol[2], sol[1], 0.9));
+  if (trail() !== 3) r.fail(`a tug short of a step left ${trail()} cells, want 3`);
+  if (String(headCell()) !== String(sol[1])) r.fail(`the head did not glide back with the tug: drawn at ${headCell()}`);
+  // Picking the string up again carries on from there: a little more and
+  // the cell is given up.
+  fire('pointerdown', at(sol[2][0], sol[2][1]));
+  fire('pointermove', between(sol[2], sol[1], 0.2));
+  calls.arcs = [];
+  // A sideways pull the head cannot follow shows as a stretch.
+  const walls = new (loadLogic().Maze)(m);
+  const side = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dr, dc]) =>
+    (dr !== sol[0][0] - sol[1][0] || dc !== sol[0][1] - sol[1][1]) &&
+    !walls.linked(sol[1][0], sol[1][1], sol[1][0] + dr, sol[1][1] + dc));
+  if (side) {
+    const p = between(sol[2], sol[1], 0.2);
+    fire('pointermove', { ...p, clientX: p.clientX + side[1] * cell * 0.3, clientY: p.clientY + side[0] * cell * 0.3 });
+    if (!calls.ellipse) r.fail('a pull into a wall did not stretch the head');
+  }
   fire('pointerup', at(sol[1][0], sol[1][1]));
+  if (trail() !== 2) r.fail(`a full step back left ${trail()} cells, want 2`);
+
+  // 5b. Lifting the finger leaves a guard against the back swipe, and the
+  //     swipe only spends the guard: the page puts it back while there is a
+  //     trail to keep. The trail itself is saved as well.
+  if (!pushed.length) r.fail('no history entry was pushed to catch a back swipe');
+  const guards = pushed.length;
+  fireWin('popstate');
+  if (pushed.length !== guards + 1) r.fail('a back swipe mid-maze was not caught again');
+  const saved = JSON.parse(globalThis.localStorage.getItem('maze.trail.v1') || 'null');
+  if (!saved || saved.path.length !== 2) r.fail(`saved trail is ${JSON.stringify(saved && saved.path)}, want 2 cells`);
 
   // 6. Undo hands back the trail as it stood before the last gesture, and
   //    before Again too: neither a bad drag nor a mistap should cost a run.
@@ -244,6 +295,11 @@ setTimeout(() => {
   //      coming back must not fall off the end of the array.
   for (let i = 0; i < n + 2; i++) click('next');
   if (!get('info').textContent.startsWith('∞')) r.fail('did not switch to endless at the end of the pack');
+  // Next in endless mode moves the count on even without a win, or a skip
+  // looks like a button that does nothing.
+  const was = get('level').textContent;
+  click('next');
+  if (get('level').textContent === was) r.fail(`Next in endless mode stayed on "${was}"`);
   click('endless');
   const back = get('info').textContent;
   if (!back.startsWith(`#${n}/`)) r.fail(`came back to "${back}", want the last maze`);
@@ -281,10 +337,55 @@ setTimeout(() => {
     if (dropped.length !== 2) r.fail(`dropped ${dropped.length} caches, want 2`);
     if (!unregistered) r.fail('the service worker was left registered');
     if (!reloads) r.fail('the app never came back for a fresh copy');
-
-    r.done(
+    resumeCheck(() => r.done(
       `info line: ${info}`,
       `maze 1: ${m.rows}x${m.cols} at ${cell}px cells -> canvas ${ink.style.width} x ${ink.style.height}`,
-    );
+    ), cellFor);
   }, 0);
 }, 50);
+
+// 15. Closing the app halfway — a stray edge swipe, say — and opening it again
+//     brings back the trail as it was, on the biggest maze in the pack, where
+//     cells are small enough for the fingertip margins to matter. The same
+//     app is loaded a second time over the stored progress to prove it.
+function resumeCheck(done, cellFor) {
+  const lv = pack.mazes.length - 1;
+  const big = pack.mazes[lv];
+  const sol = big.solution;
+  const half = sol.slice(0, Math.floor(sol.length / 2));
+  globalThis.localStorage._v = {
+    'maze.progress.v1': JSON.stringify({ level: lv, endless: false, endlessWins: 0 }),
+    'maze.trail.v1': JSON.stringify({ endless: false, level: lv, wins: 0, board: null, path: half }),
+  };
+  for (const k of Object.keys(nodes)) delete nodes[k];
+  el._ctx = {};
+  calls.arcs = [];
+  define('Go', undefined);                       // no wasm this time: stay in the pack
+  delete require.cache[require.resolve(path.join(DOCS, 'app.js'))];
+  require(path.join(DOCS, 'app.js'));
+
+  setTimeout(() => {
+    const cell = cellFor(big);
+    const wallW = Math.max(2, Math.round(cell * 0.11));
+    const frac = (fr, fc) => ({ clientX: wallW / 2 + fc * cell, clientY: wallW / 2 + fr * cell, pointerId: 1, preventDefault() {} });
+    const ink = get('ink');
+    const fire = (type, ev) => (ink._handlers[type] || []).forEach((h) => h(ev));
+    const head = () => {
+      // The head is the disc a fifth of a cell across; anything else is the
+      // "start here" ring still fading out from the first run of the app.
+      const a = calls.arcs.filter((x) => Math.abs(x[2] - cell * 0.2) < 1e-6).pop();
+      return a && String([Math.round((a[1] - wallW / 2 - cell / 2) / cell), Math.round((a[0] - wallW / 2 - cell / 2) / cell)]);
+    };
+    const at = half[half.length - 1], prev = half[half.length - 2];
+    if (head() !== String(at)) r.fail(`reopened with the head at ${head()}, want ${at}`);
+
+    // A finger going back down on the cell behind the head, as near as a
+    // fingertip lands, carries on from the head rather than giving up a cell.
+    calls.arcs = [];
+    const back = frac(prev[0] + 0.5 + (at[0] - prev[0]) * 0.3, prev[1] + 0.5 + (at[1] - prev[1]) * 0.3);
+    fire('pointerdown', back);
+    fire('pointerup', back);
+    if (calls.arcs.length && head() !== String(at)) r.fail(`touching down beside the head moved it to ${head()}`);
+    done();
+  }, 50);
+}

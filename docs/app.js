@@ -6,6 +6,7 @@
 
 const PACK_URL = 'pack.json';
 const STORE_KEY = 'maze.progress.v1';
+const TRAIL_KEY = 'maze.trail.v1';
 
 /* ------------------------------------------------------------------ maze */
 
@@ -83,7 +84,7 @@ let maze = null;
 let pack = [];
 let level = 0;          // index into pack
 let endless = false;    // generating fresh mazes instead of reading the pack
-let endlessWins = 0;
+let endlessWins = 0;    // endless mazes moved on from (won or skipped); the stored name is older
 let wasmReady = false;
 let wantEndless = false; // restore endless mode once the wasm has arrived
 let stale = false;       // a newer app is waiting; go back for it at a safe moment
@@ -98,16 +99,26 @@ let celebrated = false;   // one cheer per arrival, however much he wiggles
 let cheerTimer = 0;
 
 let cell = 0, wallW = 0, ox = 0, oy = 0;
+let lastX = 0, lastY = 0;   // where the finger was, so each move is a pull on the rope
+let current = null;       // the maze data on screen, kept so a trail can be saved with it
+let resume = null;        // a trail saved last time, waiting for its maze to come back
+let guarded = false;      // an extra history entry is in place to catch a back swipe
 let pulseUntil = 0, pulsing = false;
 
 /* -------------------------------------------------------------- geometry */
+
+// On a touch screen the maze keeps clear of the left and right edges. Android
+// treats a finger put down at the very edge as the system back gesture, and in
+// the installed app that closes the maze mid-run. Keeping the board out of
+// that strip means a finger going back down to carry on lands on the maze.
+const SIDE = () => (matchMedia('(pointer: coarse)').matches ? 24 : 10);
 
 // fit sizes the canvases so the maze fills the space left between the header
 // and the buttons, at whole-pixel cells.
 function fit() {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const pad = 10;
-  const availW = stage.clientWidth - pad * 2;
+  const availW = stage.clientWidth - SIDE() * 2;
   const availH = stage.clientHeight - pad * 2;
 
   cell = Math.max(12, Math.floor(Math.min(availW / maze.cols, availH / maze.rows)));
@@ -137,13 +148,13 @@ function drawWalls() {
   const h = maze.rows * cell + wallW;
 
   wallsCtx.clearRect(0, 0, w, h);
-  wallsCtx.fillStyle = '#fbf7ee';
+  wallsCtx.fillStyle = '#fff7fb';
   wallsCtx.fillRect(0, 0, w, h);
 
-  tintCell(maze.start, 'rgba(46, 164, 79, .14)');
-  tintCell(maze.end, 'rgba(242, 183, 5, .20)');
+  tintCell(maze.start, 'rgba(126, 200, 255, .20)');
+  tintCell(maze.end, 'rgba(255, 105, 180, .20)');
 
-  wallsCtx.strokeStyle = '#2f3542';
+  wallsCtx.strokeStyle = '#5a2d6e';
   wallsCtx.lineWidth = wallW;
   wallsCtx.lineCap = 'round';
   wallsCtx.beginPath();
@@ -178,7 +189,7 @@ function mark([r, c], glyph, ctx = wallsCtx) {
   // Opaque fill, explicitly. Colour emoji are bitmap glyphs and the canvas
   // applies the fill's alpha to them, so inheriting the cell tint's rgba from
   // tintCell above would draw both animals at a fifth of their opacity.
-  ctx.fillStyle = '#2f3542';
+  ctx.fillStyle = '#5a2d6e';
   ctx.font = Math.floor(cell * 0.62) + 'px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -191,27 +202,84 @@ function drawInk() {
   inkCtx.clearRect(0, 0, w, h);
 
   if (path.length) {
-    stroke(path, won ? '#f2b705' : '#ff6b35', cell * 0.34);
-    const [r, c] = path[path.length - 1];        // the head, so he can see the anchor
-    inkCtx.fillStyle = won ? '#f2b705' : '#ff6b35';
+    // Once the maze is solved, a white ribbon under the rainbow makes it shine.
+    // The head glides: part-way through a step it is drawn that far along,
+    // the trail growing (or shrinking back) under it, so a pull moves it
+    // smoothly rather than a cell at a time.
+    const g = glide();
+    const body = g && g.back ? path.slice(0, -1) : path;
+    if (won) stroke(body, '#ffffff', cell * 0.5);
+    rainbow(body, cell * 0.34);
+    const [r, c] = body[body.length - 1];
+    let hx = cx(c), hy = cy(r), tipHue = hue(body.length - 1);
+    if (g) {
+      hx = g.x; hy = g.y;
+      tipHue = hue(body.length - 1 + g.t);
+      inkCtx.strokeStyle = tipHue;
+      inkCtx.lineWidth = cell * 0.34;
+      inkCtx.lineCap = 'round';
+      inkCtx.beginPath();
+      inkCtx.moveTo(cx(c), cy(r));
+      inkCtx.lineTo(hx, hy);
+      inkCtx.stroke();
+    }
+    inkCtx.fillStyle = tipHue;                    // the head, so he can see the anchor
     inkCtx.beginPath();
-    inkCtx.arc(cx(c), cy(r), cell * 0.2, 0, Math.PI * 2);
+    inkCtx.arc(hx, hy, cell * 0.2, 0, Math.PI * 2);
     inkCtx.fill();
+    stretchHead(hx, hy, cell * 0.2, 1);
     // The trail starts on top of the animal it set out from and would bury it.
     // It lives on the walls canvas, under the ink, so the only way to keep it
     // in sight is to put it down again over the trail.
     mark(maze.start, maze.startMark, inkCtx);
+    // Likewise the one waiting at the end, once the trail has reached it.
+    if (won) mark(maze.end, maze.endMark, inkCtx);
   }
 
   const left = pulseUntil - performance.now();
   if (left > 0) {                                // "start here" ring
     const [r, c] = maze.start;
-    inkCtx.strokeStyle = 'rgba(46, 164, 79,' + (left / 900) * 0.9 + ')';
+    inkCtx.strokeStyle = 'rgba(255, 105, 180,' + (left / 900) * 0.9 + ')';
     inkCtx.lineWidth = Math.max(3, cell * 0.1);
     inkCtx.beginPath();
     inkCtx.arc(cx(c), cy(r), cell * (0.75 - (left / 900) * 0.3), 0, Math.PI * 2);
     inkCtx.stroke();
   }
+}
+
+// glide works out where the head is part-way through its next step: the
+// cell the pull would take it to, and how far along it is drawn there. When
+// the step is back over the trail, the head is drawn that far back instead
+// and the last cell left off the body. Null when there is no pull to show.
+function glide() {
+  if (!path.length || !rope.edge || rope.s <= 0) return null;
+  const best = [rope.edge.r, rope.edge.c, rope.edge.back];
+  const t = Math.min(0.999, rope.s);
+  const [hr, hc] = path[path.length - 1];
+  if (best[2]) {
+    // Going back: from the cell behind towards the head, shrinking.
+    return { back: true, t: 1 - t,
+      x: cx(hc) + (cx(best[1]) - cx(hc)) * t, y: cy(hr) + (cy(best[0]) - cy(hr)) * t };
+  }
+  return { back: false, t,
+    x: cx(hc) + (cx(best[1]) - cx(hc)) * t, y: cy(hr) + (cy(best[0]) - cy(hr)) * t };
+}
+
+// stretchHead shows the pull on the string. While a finger drags, the head is
+// drawn out towards it as a drop: longer and thinner the harder it pulls, up
+// to a full step's worth, which is also how it looks held taut against a
+// wall or at a fork. Let go and the pull is gone, so it springs back round.
+function stretchHead(x, y, rad, amount) {
+  if (!drawing) return;
+  const len = Math.hypot(rope.tx, rope.ty);
+  const t = Math.min(1, len / (stepPx() * 0.5)) * amount;
+  if (t < 0.04) return;
+  const ux = rope.tx / len, uy = rope.ty / len;
+  const shift = rad * 1.3 * t;
+  inkCtx.beginPath();
+  inkCtx.ellipse(x + ux * shift, y + uy * shift,
+    rad * (1 + 1.3 * t), rad * (1 - 0.35 * t), Math.atan2(uy, ux), 0, Math.PI * 2);
+  inkCtx.fill();
 }
 
 function stroke(cells, colour, width) {
@@ -227,6 +295,37 @@ function stroke(cells, colour, width) {
   }
   if (cells.length === 1) inkCtx.lineTo(cx(cells[0][1]), cy(cells[0][0]));
   inkCtx.stroke();
+}
+
+// The trail is a rainbow: each step along it moves on by a fixed slice of the
+// colour wheel, so the colours run red, orange, yellow, green, blue, violet,
+// pink and round again every dozen cells, whatever the size of the maze.
+const RAINBOW_STEP = 30;
+const hue = (i) => 'hsl(' + ((i * RAINBOW_STEP) % 360) + ', 95%, 60%)';
+
+// rainbow strokes the trail one step at a time, each step a gradient between
+// the colours of the two cells it joins. Round caps make the steps overlap at
+// the cell centres, and both are the same colour there, so there are no seams.
+function rainbow(cells, width) {
+  inkCtx.lineWidth = width;
+  inkCtx.lineCap = 'round';
+  inkCtx.lineJoin = 'round';
+  if (cells.length === 1) {
+    stroke(cells, hue(0), width);
+    return;
+  }
+  for (let i = 1; i < cells.length; i++) {
+    const x0 = cx(cells[i - 1][1]), y0 = cy(cells[i - 1][0]);
+    const x1 = cx(cells[i][1]), y1 = cy(cells[i][0]);
+    const g = inkCtx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, hue(i - 1));
+    g.addColorStop(1, hue(i));
+    inkCtx.strokeStyle = g;
+    inkCtx.beginPath();
+    inkCtx.moveTo(x0, y0);
+    inkCtx.lineTo(x1, y1);
+    inkCtx.stroke();
+  }
 }
 
 function pulseStart() {
@@ -320,34 +419,122 @@ function walkTowards(tr, tc) {
   }
 }
 
-// A fingertip is wider than a cell, so which cell it is on is decided with a
-// margin: hold stays on the cell already occupied until the pointer is
-// DEADZONE of the way into the next. Cells further off are taken at once —
-// the finger has plainly travelled rather than trembled.
-const DEADZONE = 0.35;
-
-function hold(f, cur) {
-  const i = Math.floor(f);
-  if (i === cur + 1 && f - i < DEADZONE) return cur;
-  if (i === cur - 1 && cur - f < DEADZONE) return cur;
-  return i;
+// The string. The finger does not have to be on the head: wherever it went
+// down, every movement since is a pull on the head, which follows it along
+// the corridors at one cell per cell of movement (see slide below).
+//
+// Which way the head goes from a cell is the open way that best matches the
+// pull: onto fresh ground, or back onto the cell just left, which gives that
+// cell up. Where the pull clearly points down one way (within 60 degrees of
+// it), the head goes that way. Otherwise it waits, held taut, for the finger
+// to lean one way: it never turns a corner the finger has not turned, so a
+// pull along a corridor into a wall stops at the wall.
+// choose picks the way a pull along (ux, uy), a unit vector, would take the
+// head next: [row, col, back] with back true for the cell just left, or null
+// where it would wait.
+function choose(ux, uy) {
+  const [r, c] = path[path.length - 1];
+  const prev = path.length > 1 ? path[path.length - 2] : null;
+  let best = null, bestCos = -2;
+  for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    const nr = r + dr, nc = c + dc;
+    if (!maze.linked(r, c, nr, nc)) continue;
+    const back = Boolean(prev && prev[0] === nr && prev[1] === nc);
+    if (!back && seen.has(key(nr, nc))) continue;    // older trail: never re-entered
+    const cos = dc * ux + dr * uy;
+    if (cos > bestCos) { bestCos = cos; best = [nr, nc, back]; }
+  }
+  return best && bestCos >= 0.5 ? best : null;
 }
 
-// cellAt reports the cell under a pointer. Given the cell to measure from —
-// the head, mid-drag — it applies that margin; a tap is taken literally.
-function cellAt(e, from) {
-  const box = inkCanvas.getBoundingClientRect();
-  const fr = (e.clientY - box.top - oy) / cell;
-  const fc = (e.clientX - box.left - ox) / cell;
-  const r = from ? hold(fr, from[0]) : Math.floor(fr);
-  const c = from ? hold(fc, from[1]) : Math.floor(fc);
-  return [
-    Math.min(maze.rows - 1, Math.max(0, r)),
-    Math.min(maze.cols - 1, Math.max(0, c)),
-  ];
+// The rope is where the head really is: on the cell at the end of the trail
+// (edge null), or some fraction s of the way along the edge to a next cell
+// (back: the cell just left, so going that way rewinds). Finger movement
+// slides it along that edge continuously; the trail only changes when it
+// arrives at the far end, or it comes back to the head and turns.
+//
+//   aim      movement gathered while standing on a cell, until it says which way
+//   tx, ty   tension: movement the head could not follow, shown as a stretch
+let rope = { edge: null, s: 0, aimX: 0, aimY: 0, tx: 0, ty: 0 };
+
+function ropeReset() {
+  rope = { edge: null, s: 0, aimX: 0, aimY: 0, tx: 0, ty: 0 };
+}
+
+// slide moves the head by a finger movement of (dx, dy) pixels, with step
+// pixels to a cell.
+//
+// Along an edge the head moves by the part of the movement that points along
+// it, so a sideways wobble moves it not at all and a slight wander costs only
+// a little speed. On a cell it
+// waits for a short, definite movement before choosing which way to go, so a
+// tremor at a fork chooses nothing; once it is travelling it turns straight
+// into the next edge without stopping.
+function slide(dx, dy, step) {
+  const decay = 0.8;
+  rope.tx *= decay; rope.ty *= decay;
+  let travelling = false;
+  for (let guard = 0; guard < 64 && (dx || dy); guard++) {
+    const len = Math.hypot(dx, dy);
+    if (!rope.edge) {
+      rope.aimX += dx; rope.aimY += dy;
+      dx = dy = 0;
+      const aim = Math.hypot(rope.aimX, rope.aimY);
+      if (aim < (travelling ? 1e-9 : step * 0.15)) break;
+      const best = choose(rope.aimX / aim, rope.aimY / aim);
+      if (!best) {
+        // Nowhere to go yet: held taut, the pull showing as a stretch, and
+        // not piling up to fire off later all at once.
+        const k = Math.min(aim, step * 0.5) / aim;
+        rope.aimX *= k; rope.aimY *= k;
+        rope.tx = rope.aimX; rope.ty = rope.aimY;
+        break;
+      }
+      const [hr, hc] = path[path.length - 1];
+      rope.edge = { r: best[0], c: best[1], back: best[2],
+                    dr: best[0] - hr, dc: best[1] - hc };
+      rope.s = 0;
+      dx = rope.aimX; dy = rope.aimY;            // spend what chose the way along it
+      rope.aimX = rope.aimY = 0;
+      continue;
+    }
+
+    const e = rope.edge;
+    const ux = dx / len, uy = dy / len;
+    const cos = ux * e.dc + uy * e.dr;
+    let along = len * cos;
+    // Barely started down one way while the finger plainly wants another, as
+    // when momentum carries the head a hair into the straight-on branch of a
+    // fork: it slides back to the middle of the cell and takes the other.
+    let turning = false;
+    if (cos < 0.3 && rope.s < 0.5) {
+      const alt = choose(ux, uy);
+      if (alt && (alt[0] !== e.r || alt[1] !== e.c)) { along = -len; turning = true; }
+    }
+    if (!turning) {                // the sideways part is tension
+      rope.tx += dx - e.dc * along; rope.ty += dy - e.dr * along;
+    }
+    rope.s += along / step;
+    dx = dy = 0;
+    if (rope.s >= 1) {                           // arrived: the trail takes the step
+      const over = (rope.s - 1) * step;
+      if (e.back) retreat(); else advance(e.r, e.c);
+      rope.edge = null; rope.s = 0;
+      travelling = true;
+      dx = ux * over; dy = uy * over;
+    } else if (rope.s < 0) {                     // back on the head's own cell
+      const under = -rope.s * step;
+      rope.edge = null; rope.s = 0;
+      if (turning) { dx = ux * under; dy = uy * under; travelling = true; }
+      else { dx = -e.dc * under; dy = -e.dr * under; }
+    }
+  }
+  const t = Math.hypot(rope.tx, rope.ty), cap = step * 0.5;
+  if (t > cap) { rope.tx *= cap / t; rope.ty *= cap / t; }
 }
 
 function resetPath() {
+  ropeReset();
   path = [];
   seen = new Map();
   won = false;
@@ -385,6 +572,7 @@ function forget() {
 
 function undo() {
   if (!history.length) return;
+  ropeReset();
   path = history.pop();
   seen = new Map();
   for (let i = 0; i < path.length; i++) seen.set(key(path[i][0], path[i][1]), i);
@@ -398,34 +586,28 @@ function undo() {
   else nextBtn.classList.remove('ready');
   undoBtn.disabled = history.length === 0;
   drawInk();
+  saveTrail();
 }
 
 /* -------------------------------------------------------------- pointers */
 
+// The finger can be anywhere on the board: it holds the end of the string,
+// not the head itself, so it never covers the cells it is steering into.
+
+// One cell of pull per cell moved, but never less than a fingertip's nudge,
+// so on the smallest cells a tremor is still not a step.
+const stepPx = () => Math.max(cell, 16);
+
 inkCanvas.addEventListener('pointerdown', (e) => {
-  const [r, c] = cellAt(e);
-  // Before anything moves, including the rewind below: putting a finger down
-  // on the trail is deliberate, but it can still be the wrong bit of trail.
   pending = path.slice();
-
   if (path.length === 0) {
-    // Only the start counts, but generously: anywhere in the eight cells
-    // around it snaps to it, because a fingertip is wider than a cell.
-    if (Math.abs(r - maze.start[0]) > 1 || Math.abs(c - maze.start[1]) > 1) {
-      pulseStart();
-      return;
-    }
-    advance(maze.start[0], maze.start[1]);
-  } else if (seen.has(key(r, c))) {
-    advance(r, c);            // grabbed the trail partway along: rewind to here
-  } else {
-    const [hr, hc] = path[path.length - 1];
-    if (Math.abs(r - hr) + Math.abs(c - hc) > 1) return;  // nowhere near the head
+    advance(maze.start[0], maze.start[1]);   // the string starts at the start animal
+    pulseStart();
   }
-
   drawing = true;
+  rope.aimX = rope.aimY = 0;
+  lastX = e.clientX; lastY = e.clientY;
   inkCanvas.setPointerCapture(e.pointerId);
-  walkTowards(r, c);
   drawInk();
   if (won) celebrate();
   e.preventDefault();
@@ -433,23 +615,31 @@ inkCanvas.addEventListener('pointerdown', (e) => {
 
 inkCanvas.addEventListener('pointermove', (e) => {
   if (!drawing) return;
-  const [r, c] = cellAt(e, path[path.length - 1]);
   const before = path.length, stood = path[path.length - 1];
-  walkTowards(r, c);
-  // The head can move without the trail changing length: at a junction one
-  // event can step back and then away down the other branch.
-  if (path.length !== before || path[path.length - 1] !== stood) {
-    drawInk();
-    if (won) celebrate();
+  // Every sample since the last frame, in order, so a quick swirl round a
+  // corner pulls round the corner rather than straight across it.
+  const samples = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+  for (const s of samples.length ? samples : [e]) {
+    slide(s.clientX - lastX, s.clientY - lastY, stepPx());
+    lastX = s.clientX; lastY = s.clientY;
   }
+  // Redrawn on every move, not only when the head changes cell: the pull on
+  // the string shows in the head's shape.
+  drawInk();
+  if (won && (path.length !== before || path[path.length - 1] !== stood)) celebrate();
   e.preventDefault();
 });
 
 for (const type of ['pointerup', 'pointercancel']) {
   inkCanvas.addEventListener(type, (e) => {
+    const wasDrawing = drawing;
     drawing = false;
+    rope.tx = rope.ty = rope.aimX = rope.aimY = 0;
+    if (wasDrawing) drawInk();       // the head springs back round, but stays where it slid to
     keep(pending);
     pending = null;
+    saveTrail();
+    guard();
     if (inkCanvas.hasPointerCapture(e.pointerId)) inkCanvas.releasePointerCapture(e.pointerId);
   });
 }
@@ -472,12 +662,12 @@ function celebrate() {
   cheerTimer = setTimeout(() => { cheer.hidden = true; }, 2600);
   confetti();
   if (!endless) save();
-  else { endlessWins++; save(); }
+  else save();
 }
 
 function confetti() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const glyphs = [maze.startMark, maze.endMark, '🎉', '⭐'];
+  const glyphs = [maze.startMark, maze.endMark, '💖', '✨', '🌈', '🦋'];
   for (let i = 0; i < 18; i++) {
     const bit = document.createElement('span');
     bit.className = 'confetti';
@@ -498,11 +688,14 @@ function show(data) {
   if (stale) { location.reload(); return; }
 
   maze = new Maze(data);
+  current = data;
   resetPath();
   forget();               // a new maze: there is no earlier trail to go back to
   fit();
   drawWalls();
+  restoreTrail();         // the run he was in the middle of, if this is its maze
   drawInk();
+  saveTrail();
 
   document.getElementById('level').textContent =
     endless ? 'Maze ' + (endlessWins + 1) : 'Maze ' + (level + 1) + ' of ' + pack.length;
@@ -526,12 +719,17 @@ function endlessShape() {
   const target = Math.max(22, 34 - endlessWins);
   return {
     rows: Math.min(40, Math.max(6, Math.floor((stage.clientHeight - 20) / target))),
-    cols: Math.min(30, Math.max(5, Math.floor((stage.clientWidth - 20) / target))),
+    cols: Math.min(30, Math.max(5, Math.floor((stage.clientWidth - SIDE() * 2) / target))),
   };
 }
 
 function nextMaze() {
   if (endless) {
+    // Coming back to endless mode with a run half done: that maze, not a new one.
+    if (resume && resume.endless && resume.board && resume.wins === endlessWins) {
+      show(resume.board);
+      return;
+    }
     const { rows, cols } = endlessShape();
     show(JSON.parse(window.mazeGenerate(rows, cols, Math.floor(Math.random() * 2 ** 53), 14)));
     return;
@@ -569,6 +767,74 @@ function load() {
   } catch (_) { return {}; }
 }
 
+// The trail is kept too, so a maze closed halfway — an edge swipe, a phone
+// call, the app killed in the background — opens again where he left it.
+// Endless mazes are random, so for those the maze goes with it.
+function saveTrail() {
+  if (!maze) return;
+  try {
+    localStorage.setItem(TRAIL_KEY, JSON.stringify({
+      endless, level, wins: endlessWins,
+      board: endless ? current : null,
+      path,
+    }));
+  } catch (_) { /* private browsing: the trail just won't survive a restart */ }
+}
+
+function loadTrail() {
+  try {
+    return JSON.parse(localStorage.getItem(TRAIL_KEY));
+  } catch (_) { return null; }
+}
+
+// restoreTrail puts back the saved trail if it belongs to the maze just
+// shown, and only if it is still a legal walk on it: a stale or damaged save
+// must cost a trail, never break the maze.
+function restoreTrail() {
+  const t = resume;
+  if (!t || t.endless !== endless) return;
+  if (endless ? t.board !== current : t.level !== level) return;
+  resume = null;
+
+  const p = Array.isArray(t.path) ? t.path : [];
+  if (!p.length || p[0][0] !== maze.start[0] || p[0][1] !== maze.start[1]) return;
+  const s = new Map();
+  for (let i = 0; i < p.length; i++) {
+    const [r, c] = p[i];
+    if (!maze.inside(r, c) || s.has(key(r, c))) return;
+    if (i && !maze.linked(p[i - 1][0], p[i - 1][1], r, c)) return;
+    s.set(key(r, c), i);
+  }
+  path = p.map(([r, c]) => [r, c]);
+  seen = s;
+  settle();
+  celebrated = won;          // already cheered (and counted) before he left
+  if (won) nextBtn.classList.add('ready');
+}
+
+// The back swipe. Once there is a trail worth keeping, an extra history entry
+// sits on top of the page, so a swipe in from the edge only pops that entry
+// and the maze stays put. It is added after a finger lifts because browsers
+// ignore entries a page pushes without the user having touched it.
+function guard() {
+  if (guarded || path.length < 2 || !window.history || !window.history.pushState) return;
+  try {
+    window.history.pushState({ maze: true }, '');
+    guarded = true;
+  } catch (_) { /* some embedded webviews refuse: the saved trail still holds */ }
+}
+
+window.addEventListener('popstate', () => {
+  guarded = false;
+  guard();                   // still mid-maze: put the guard straight back
+});
+
+// Save on the way out as well, in case the app goes mid-drag.
+window.addEventListener('pagehide', saveTrail);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveTrail();
+});
+
 /* ---------------------------------------------------------- fresh start */
 
 // The way out of anything that has gone wrong for good: forget where he had
@@ -579,7 +845,10 @@ function wipe() {
   if (!confirm('Start again from scratch?\n\n'
              + 'This forgets which maze you are on and downloads the app afresh.')) return;
 
-  try { localStorage.removeItem(STORE_KEY); } catch (_) { /* nothing was saved anyway */ }
+  try {
+    localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(TRAIL_KEY);
+  } catch (_) { /* nothing was saved anyway */ }
 
   // The cached copies, then the worker that serves them. Both are allowed to
   // fail: coming back for a fresh page is worth having either way, so the
@@ -602,9 +871,17 @@ document.getElementById('reset').addEventListener('click', () => {
   const was = path.slice();
   resetPath();
   keep(was);
+  saveTrail();
 });
 undoBtn.addEventListener('click', undo);
-nextBtn.addEventListener('click', nextMaze);
+// Next always moves on, in endless mode too: the count and the shrinking cells
+// follow every maze left behind, so a skip is seen to do something rather
+// than handing over another "Maze 1" the same size.
+nextBtn.addEventListener('click', () => {
+  resume = null;
+  if (endless) endlessWins++;
+  nextMaze();
+});
 document.getElementById('wipe').addEventListener('click', wipe);
 
 endlessBtn.addEventListener('click', () => setEndless(!endless));
@@ -653,6 +930,7 @@ fetch(PACK_URL)
     level = Math.min(Math.max(saved.level | 0, 0), pack.length - 1);
     endlessWins = saved.endlessWins | 0;
     wantEndless = Boolean(saved.endless);
+    resume = loadTrail();
     show(pack[level]);
     loadWasm();
   })
@@ -665,12 +943,19 @@ fetch(PACK_URL)
 // A worker taking over is the signal that has happened, and the only way to see
 // the new files is to go back for the page: at once if he has not started, and
 // otherwise at the next maze, where there is nothing to lose by it.
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  const updating = Boolean(navigator.serviceWorker.controller);  // not a first visit
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!updating) return;      // the first worker ever, claiming its first page
-    stale = true;
-    if (!path.length) location.reload();
-  });
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+// Only our own worker counts. Embedded in another page (a preview, say) the
+// frame can be under someone else's worker, and its comings and goings must
+// not send the maze back to the start on every Next.
+const ourWorker = (w) => Boolean(w && /\/sw\.js$/.test(w.scriptURL));
+try {
+  if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window) {
+    const updating = ourWorker(navigator.serviceWorker.controller);  // not a first visit
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!updating) return;      // the first worker ever, claiming its first page
+      if (!ourWorker(navigator.serviceWorker.controller)) return;
+      stale = true;
+      if (!path.length) location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+} catch (_) { /* a sandboxed frame may refuse to say: then there is no worker */ }

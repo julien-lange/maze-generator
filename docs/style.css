@@ -3,11 +3,10 @@
    always drawing, never panning. */
 
 :root {
-  --paper: #fbf7ee;
-  --ink: #2f3542;
-  --trail: #ff6b35;
-  --gold: #f2b705;
-  --bar: #2f3542;
+  --paper: #fff7fb;
+  --ink: #5a2d6e;
+  --pink: #ff8cc6;
+  --bar: #5a2d6e;
 }
 
 * { box-sizing: border-box; }
@@ -41,18 +40,18 @@ body {
 }
 
 #level { font-size: 17px; }
-#stars { margin-left: auto; color: var(--gold); letter-spacing: 2px; font-size: 15px; }
+#stars { margin-left: auto; color: var(--pink); letter-spacing: 2px; font-size: 15px; }
 
 #endless {
   flex: none;
   width: 40px; height: 40px;
   font-size: 22px;
-  border: 2px solid rgba(251, 247, 238, .35);
+  border: 2px solid rgba(255, 247, 251, .35);
   border-radius: 12px;
   background: none;
   color: var(--paper);
 }
-#endless[aria-pressed="true"] { background: var(--gold); color: var(--bar); border-color: var(--gold); }
+#endless[aria-pressed="true"] { background: var(--pink); color: var(--bar); border-color: var(--pink); }
 
 /* The maze. touch-action:none is what stops the browser treating a drag as a
    scroll or a pinch and swallowing the pointer events. */
@@ -80,7 +79,7 @@ body {
 #cheer[hidden] { display: none; }
 
 #cheer-card {
-  background: rgba(47, 53, 66, .93);
+  background: rgba(90, 45, 110, .93);
   border-radius: 20px;
   padding: 18px 28px;
   text-align: center;
@@ -122,7 +121,7 @@ body {
   text-align: center;
   font: 500 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: .02em;
-  color: rgba(251, 247, 238, .45);
+  color: rgba(255, 247, 251, .45);
 }
 
 /* Small, faint, and nowhere near the row of big buttons: a child sweeping a
@@ -131,10 +130,10 @@ body {
 #wipe {
   flex: none;
   padding: 3px 6px;
-  border: 1px solid rgba(251, 247, 238, .18);
+  border: 1px solid rgba(255, 247, 251, .18);
   border-radius: 6px;
   background: none;
-  color: rgba(251, 247, 238, .38);
+  color: rgba(255, 247, 251, .38);
   font: 500 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -155,17 +154,17 @@ body {
   gap: 2px;
   border: none;
   border-radius: 16px;
-  background: rgba(251, 247, 238, .12);
+  background: rgba(255, 247, 251, .12);
   color: var(--paper);
   font: inherit;
 }
 #controls button span { font-size: 22px; line-height: 1; }
 #controls button small { font-size: 11px; opacity: .8; font-weight: 500; }
-#controls button:active { background: rgba(251, 247, 238, .28); }
+#controls button:active { background: rgba(255, 247, 251, .28); }
 /* Nothing to take back yet: still there, still the same size, plainly not for
    pressing — the row must not shuffle about under a finger already moving. */
 #controls button:disabled { opacity: .3; }
-#controls #next.ready { background: var(--gold); color: var(--bar); animation: nudge 1.2s ease-in-out infinite; }
+#controls #next.ready { background: var(--pink); color: var(--bar); animation: nudge 1.2s ease-in-out infinite; }
 
 @keyframes nudge {
   0%, 100% { transform: none; }
