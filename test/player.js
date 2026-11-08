@@ -89,7 +89,9 @@ define('addEventListener', (t, fn) => { (winHandlers[t] = winHandlers[t] || []).
 const fireWin = (t) => (winHandlers[t] || []).forEach((h) => h({}));
 const pushed = [];
 define('history', { pushState: (st) => { pushed.push(st); } });
-define('document', { getElementById: get, createElement: () => el('span'), addEventListener: () => {} });
+define('document', {
+  documentElement: { dataset: {} }, querySelector: () => ({}),
+  getElementById: get, createElement: () => el('span'), addEventListener: () => {} });
 define('location', { protocol: 'file:', reload: () => { reloads++; } });   // no worker registered
 define('navigator', {});                            // no serviceWorker in it, so none is registered
 define('matchMedia', () => ({ matches: true }));    // reduced motion: suppress confetti
@@ -97,7 +99,7 @@ define('ResizeObserver', class { observe() {} });
 define('requestAnimationFrame', (fn) => setTimeout(() => fn(Date.now()), 0));
 define('devicePixelRatio', 2);
 define('localStorage', {
-  _v: {},
+  _v: { 'maze.theme.v1': 'magic' },   // the rainbow and the princess are checked below; classic has its own check
   getItem(k) { return this._v[k] || null; },
   setItem(k, v) { this._v[k] = v; },
   removeItem(k) { delete this._v[k]; },
@@ -290,6 +292,18 @@ setTimeout(() => {
   if (get('endless').getAttribute('aria-pressed') !== 'true') r.fail('endless button not marked pressed');
   click('endless');
   if (get('info').textContent !== wasAt) r.fail(`came back to "${get('info').textContent}", want "${wasAt}"`);
+
+  // 11b. The theme button swaps magic and classic, remembers the choice, and
+  //      redraws the same maze rather than starting another.
+  const root = globalThis.document.documentElement.dataset;
+  if (root.theme !== 'magic') r.fail(`stored look is "${root.theme}", want magic`);
+  const before = get('info').textContent;
+  click('theme');
+  if (root.theme !== 'classic') r.fail('the theme button did not switch to classic');
+  if (globalThis.localStorage.getItem('maze.theme.v1') !== 'classic') r.fail('theme not remembered');
+  if (get('info').textContent !== before) r.fail('switching theme changed the maze');
+  click('theme');
+  if (root.theme !== 'magic') r.fail('the theme button did not switch back');
 
   // 12. Running off the end of the pack switches to endless by itself, and
   //      coming back must not fall off the end of the array.

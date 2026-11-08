@@ -79,6 +79,46 @@ const nextBtn = document.getElementById('next');
 const infoEl = document.getElementById('info');
 const endlessBtn = document.getElementById('endless');
 const undoBtn = document.getElementById('undo');
+const themeBtn = document.getElementById('theme');
+
+/* ---------------------------------------------------------------- themes */
+
+// Two looks for the same game. Classic is slate and orange, with a plain
+// orange trail that turns gold when the maze is solved; magic is purple and
+// pink with a rainbow trail. The page colours live in style.css, keyed on
+// <html data-theme>; these are the ones painted on the canvas.
+const THEMES = {
+  classic: {
+    paper: '#fbf7ee', ink: '#2f3542', meta: '#2f3542',
+    startTint: 'rgba(46, 164, 79, .14)', endTint: 'rgba(242, 183, 5, .20)',
+    ring: '46, 164, 79', rainbow: false, trail: '#ff6b35', gold: '#f2b705',
+    // The princess and her castle are for the magic look; classic ends on a goal.
+    ends: { '👸': '🏆', '🧚': '⭐', '🧜': '🚀', '🏰': '🦖', '👑': '🐲', '🌈': '🦕', '💖': '🛸', '🌸': '🎯' },
+    confetti: ['⭐', '✨', '🎉', '🏆'],
+  },
+  magic: {
+    paper: '#fff7fb', ink: '#5a2d6e', meta: '#5a2d6e',
+    startTint: 'rgba(126, 200, 255, .20)', endTint: 'rgba(255, 105, 180, .20)',
+    ring: '255, 105, 180', rainbow: true, ends: {},
+    confetti: ['💖', '✨', '🌈', '🦋'],
+  },
+};
+const THEME_KEY = 'maze.theme.v1';
+let themeName = 'classic';
+try {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved in THEMES) themeName = saved;
+} catch (_) { /* private browsing */ }
+const T = () => THEMES[themeName];
+const endMarkOf = (m) => T().ends[m.endMark] || m.endMark;
+
+function applyTheme() {
+  document.documentElement.dataset.theme = themeName;
+  document.querySelector('meta[name="theme-color"]').content = T().meta;
+  themeBtn.setAttribute('aria-pressed', String(themeName === 'magic'));
+  themeBtn.textContent = themeName === 'magic' ? '🌈' : '🎨';
+}
+applyTheme();
 
 let maze = null;
 let pack = [];
@@ -148,13 +188,13 @@ function drawWalls() {
   const h = maze.rows * cell + wallW;
 
   wallsCtx.clearRect(0, 0, w, h);
-  wallsCtx.fillStyle = '#fff7fb';
+  wallsCtx.fillStyle = T().paper;
   wallsCtx.fillRect(0, 0, w, h);
 
-  tintCell(maze.start, 'rgba(126, 200, 255, .20)');
-  tintCell(maze.end, 'rgba(255, 105, 180, .20)');
+  tintCell(maze.start, T().startTint);
+  tintCell(maze.end, T().endTint);
 
-  wallsCtx.strokeStyle = '#5a2d6e';
+  wallsCtx.strokeStyle = T().ink;
   wallsCtx.lineWidth = wallW;
   wallsCtx.lineCap = 'round';
   wallsCtx.beginPath();
@@ -177,7 +217,7 @@ function drawWalls() {
   wallsCtx.stroke();
 
   mark(maze.start, maze.startMark);
-  mark(maze.end, maze.endMark);
+  mark(maze.end, endMarkOf(maze));
 }
 
 function tintCell([r, c], colour) {
@@ -189,7 +229,7 @@ function mark([r, c], glyph, ctx = wallsCtx) {
   // Opaque fill, explicitly. Colour emoji are bitmap glyphs and the canvas
   // applies the fill's alpha to them, so inheriting the cell tint's rgba from
   // tintCell above would draw both animals at a fifth of their opacity.
-  ctx.fillStyle = '#5a2d6e';
+  ctx.fillStyle = T().ink;
   ctx.font = Math.floor(cell * 0.62) + 'px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -208,13 +248,18 @@ function drawInk() {
     // smoothly rather than a cell at a time.
     const g = glide();
     const body = g && g.back ? path.slice(0, -1) : path;
-    if (won) stroke(body, '#ffffff', cell * 0.5);
-    rainbow(body, cell * 0.34);
+    const colour = won ? T().gold : T().trail;
+    if (T().rainbow) {
+      if (won) stroke(body, '#ffffff', cell * 0.5);
+      rainbow(body, cell * 0.34);
+    } else {
+      stroke(body, colour, cell * 0.34);
+    }
     const [r, c] = body[body.length - 1];
-    let hx = cx(c), hy = cy(r), tipHue = hue(body.length - 1);
+    let hx = cx(c), hy = cy(r), tipHue = T().rainbow ? hue(body.length - 1) : colour;
     if (g) {
       hx = g.x; hy = g.y;
-      tipHue = hue(body.length - 1 + g.t);
+      tipHue = T().rainbow ? hue(body.length - 1 + g.t) : colour;
       inkCtx.strokeStyle = tipHue;
       inkCtx.lineWidth = cell * 0.34;
       inkCtx.lineCap = 'round';
@@ -233,13 +278,13 @@ function drawInk() {
     // in sight is to put it down again over the trail.
     mark(maze.start, maze.startMark, inkCtx);
     // Likewise the one waiting at the end, once the trail has reached it.
-    if (won) mark(maze.end, maze.endMark, inkCtx);
+    if (won) mark(maze.end, endMarkOf(maze), inkCtx);
   }
 
   const left = pulseUntil - performance.now();
   if (left > 0) {                                // "start here" ring
     const [r, c] = maze.start;
-    inkCtx.strokeStyle = 'rgba(255, 105, 180,' + (left / 900) * 0.9 + ')';
+    inkCtx.strokeStyle = 'rgba(' + T().ring + ',' + (left / 900) * 0.9 + ')';
     inkCtx.lineWidth = Math.max(3, cell * 0.1);
     inkCtx.beginPath();
     inkCtx.arc(cx(c), cy(r), cell * (0.75 - (left / 900) * 0.3), 0, Math.PI * 2);
@@ -653,7 +698,7 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 function celebrate() {
   if (celebrated) return;
   celebrated = true;
-  document.getElementById('cheer-mark').textContent = maze.endMark;
+  document.getElementById('cheer-mark').textContent = endMarkOf(maze);
   cheer.hidden = false;
   nextBtn.classList.add('ready');
   // Take the card away again so he can admire the path he drew; the glowing
@@ -667,7 +712,7 @@ function celebrate() {
 
 function confetti() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const glyphs = [maze.startMark, maze.endMark, '💖', '✨', '🌈', '🦋'];
+  const glyphs = [maze.startMark, endMarkOf(maze), ...T().confetti];
   for (let i = 0; i < 18; i++) {
     const bit = document.createElement('span');
     bit.className = 'confetti';
@@ -885,6 +930,13 @@ nextBtn.addEventListener('click', () => {
 document.getElementById('wipe').addEventListener('click', wipe);
 
 endlessBtn.addEventListener('click', () => setEndless(!endless));
+
+themeBtn.addEventListener('click', () => {
+  themeName = themeName === 'magic' ? 'classic' : 'magic';
+  try { localStorage.setItem(THEME_KEY, themeName); } catch (_) { /* fine */ }
+  applyTheme();
+  if (maze) { drawWalls(); drawInk(); }      // same maze, same trail, new colours
+});
 
 new ResizeObserver(() => {
   if (!maze) return;

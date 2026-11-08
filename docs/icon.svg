@@ -1,18 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Maze">
-  <defs>
-    <linearGradient id="rainbow" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#ff4d6d"/>
-      <stop offset=".2" stop-color="#ff9f1c"/>
-      <stop offset=".4" stop-color="#ffe14d"/>
-      <stop offset=".6" stop-color="#4cd964"/>
-      <stop offset=".8" stop-color="#4dabff"/>
-      <stop offset="1" stop-color="#b56cff"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="#5a2d6e"/>
+  <rect width="512" height="512" rx="112" fill="#2f3542"/>
   <path d="M96 416V96h320v320H176V176h160v160"
-        fill="none" stroke="#fff7fb" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+        fill="none" stroke="#fbf7ee" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M136 464V136h240v240H256"
-        fill="none" stroke="url(#rainbow)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M256 296c-14-22-50-16-50 12 0 24 30 40 50 56 20-16 50-32 50-56 0-28-36-34-50-12z" fill="#ff8cc6"/>
+        fill="none" stroke="#ff6b35" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

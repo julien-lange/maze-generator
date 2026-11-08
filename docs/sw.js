@@ -2,7 +2,7 @@
 // car, on a train, wherever. Bump VERSION whenever you republish a new pack or
 // a new wasm build, or phones will happily keep serving yesterday's.
 
-const VERSION = 'maze-v12';
+const VERSION = 'maze-v13';
 
 // Everything the maze needs to play with no signal at all. Taken as a batch:
 // addAll rejects the lot if one file fails to arrive, which fails the install,

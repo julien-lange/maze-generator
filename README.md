@@ -50,6 +50,10 @@ It gets its mazes from two places, and cannot tell them apart:
   appears as soon as the wasm has loaded, so its presence doubles as a sign the
   wasm is working. It is optional: if the wasm fails to load, the pack still
   plays and the button never appears.
+- **Look** — the 🎨 button beside ∞ swaps between *classic* (slate, an orange
+  trail that turns gold, goals like 🏆 and 🚀 at the end) and *magic* (purple and
+  pink, a rainbow trail, a princess or fairy at the end). Classic is the default
+  and the choice is remembered. The PDF always uses the magic marks.
 
   To jump ahead in the pack while testing:
 
